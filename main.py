@@ -1,8 +1,15 @@
 import logging
 import random
+from io import BytesIO
+import imagehash
+from PIL import Image
 from decouple import config
+from dotenv import load_dotenv
 from telegram import Update
 from telegram.ext import filters, MessageHandler, ApplicationBuilder, CommandHandler, ContextTypes
+
+
+load_dotenv()
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -11,6 +18,7 @@ logging.basicConfig(
 
 photos = []
 unique_id = []
+phash_list = []
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -18,17 +26,26 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def save_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global photos
     global unique_id
     photo = update.message.photo[-1]
-    if photo.file_unique_id not in unique_id:
-        unique_id.append(photo.file_unique_id)
-        photos.append(photo.file_id)
-        message = 'photo saved'
-    else:
-        message = 'photo already in database'
-    await context.bot.send_message(chat_id=update.effective_chat.id, text=message)
-    # await context.bot.send_photo(chat_id=update.effective_chat.id, photo=random.choice(photos))
+    if photo.file_unique_id in unique_id:
+        await context.bot.send_message(chat_id=update.effective_chat.id, text='photo already in database')
+        return
+
+    file = await photo.get_file()
+    file_bytes = BytesIO()
+    await file.download_to_memory(file_bytes)
+    phash = imagehash.phash(Image.open(file_bytes))
+    global phash_list
+    if phash in phash_list:
+        await context.bot.send_message(chat_id=update.effective_chat.id, text='photo already in database')
+        return
+
+    global photos
+    unique_id.append(photo.file_unique_id)
+    phash_list.append(phash)
+    photos.append(photo.file_id)
+    await context.bot.send_message(chat_id=update.effective_chat.id, text=f'photo saved {phash}')
 
 
 async def send_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -36,7 +53,7 @@ async def send_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 if __name__ == '__main__':
-    application = ApplicationBuilder().token(config("API_KEY")).build()
+    application = ApplicationBuilder().token(config("API_TOKEN")).build()
 
     start_handler = CommandHandler('start', start)
     photo_handler = CommandHandler('photo', send_photo)

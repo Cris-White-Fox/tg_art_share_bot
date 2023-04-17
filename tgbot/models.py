@@ -1,6 +1,4 @@
-from datetime import datetime
 from django.db import models
-from django.utils.safestring import mark_safe
 
 
 class Profile(models.Model):
@@ -20,6 +18,7 @@ class Image(models.Model):
     profile = models.ForeignKey(Profile, verbose_name="Профиль владельца", on_delete=models.CASCADE)
     image_id = models.TextField(verbose_name="Идентификатор изображения", default="")
     image_unique_id = models.TextField(verbose_name="Уникальный идентификатор изображения", unique=True)
+    image_hash = models.TextField(verbose_name="Хэш изображения", unique=True)
 
     class Meta:
         verbose_name = "Изображение анкеты"
@@ -29,7 +28,7 @@ class Image(models.Model):
         return f"Изображение: {self.image_unique_id} ({self.profile})"
 
 
-class IageScore(models.Model):
+class ImageScore(models.Model):
     user = models.ForeignKey(Profile, verbose_name="Пользователь", related_name='user', on_delete=models.CASCADE)
     image = models.ForeignKey(Image, verbose_name="Изображение", related_name='image', on_delete=models.CASCADE)
     score = models.IntegerField(verbose_name="Результат взаимодействия")
