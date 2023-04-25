@@ -1,11 +1,13 @@
 from io import BytesIO
+
+import django
 import imagehash
 from PIL import Image as PILImage
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, filters, MessageHandler, CommandHandler, CallbackQueryHandler
 
 from project.settings import tg_application
-from tgbot.models import Image, ImageScore, Profile
+from tgbot.models import Image, ImageScore, Profile, SpamLimitException
 
 
 def update_user(func):
@@ -17,7 +19,11 @@ def update_user(func):
 
 @update_user
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await context.bot.send_message(chat_id=update.effective_chat.id, text="I'm a bot, please send me arts!")
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text="Hey, send me the art you want to share and I'll find someone who likes it!\n\n"
+             "Хей, пришли мне арт, которым хочешь поделиться и я найду того, кому он понравится!"
+    )
 
 
 @update_user
@@ -40,12 +46,20 @@ async def save_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=update.effective_chat.id, text='Image already in database')
         return
 
-    await Image.new_image(
-        profile_id=update.effective_user.id,
-        file_id=photo.file_id,
-        file_unique_id=photo.file_unique_id,
-        phash=phash,
-    )
+    try:
+        await Image.new_image(
+            profile_id=update.effective_user.id,
+            file_id=photo.file_id,
+            file_unique_id=photo.file_unique_id,
+            phash=phash,
+        )
+    except django.db.utils.IntegrityError:
+        await context.bot.send_message(chat_id=update.effective_chat.id, text='Image already in database')
+        return
+    except SpamLimitException:
+        await context.bot.send_message(chat_id=update.effective_chat.id, text='Upload limit!\ntry later')
+        return
+
     await context.bot.send_message(chat_id=update.effective_chat.id, text=f'Image saved!')
 
 
@@ -93,8 +107,9 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 handlers = [
     CommandHandler('start', start, block=False),
+    CommandHandler('help', start, block=False),
     CommandHandler('image', send_photo, block=False),
-    MessageHandler(filters.PHOTO & (~filters.COMMAND), save_photo),
+    MessageHandler(filters.PHOTO & (~filters.COMMAND), save_photo, block=False),
     CallbackQueryHandler(button, block=False)
 ]
 tg_application.add_handlers(handlers)

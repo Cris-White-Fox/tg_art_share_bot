@@ -4,8 +4,9 @@ from .models import Profile, Image, ImageScore
 
 @admin.register(Profile)
 class ProfileAdmin(admin.ModelAdmin):
-    list_display = ('tg_id', 'name', 'last_activity')
+    list_display = ('tg_id', 'name', 'last_activity', 'last_bot_message')
     search_fields = ('tg_id', 'name')
+    # list_editable = ('name', 'last_activity', 'last_bot_message')
 
 
 @admin.register(Image)
@@ -24,4 +25,4 @@ class ImageAdmin(admin.ModelAdmin):
 class ImageScoreAdmin(admin.ModelAdmin):
     list_display = ('profile', 'image', 'score', 'datetime')
     list_filter = ('score', )
-    search_fields = ('profile__name', 'profile__tg_id', 'image__profile', 'image__file_unique_id', 'image__phash')
+    search_fields = ('profile', 'image')
