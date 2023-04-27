@@ -5,4 +5,4 @@ import tgbot.views
 
 class Command(BaseCommand):
     def handle(self, *args, **options):
-        tg_application.run_polling()
+        tg_application.run_polling(timeout=120)

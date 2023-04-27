@@ -28,23 +28,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 @update_user
 async def save_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     if await Image.check_daily_limit(update.effective_user.id):
-        await context.bot.send_message(chat_id=update.effective_chat.id, text='Upload limit!\ntry later')
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text='Upload limit!\ntry later',
+            reply_to_message_id=update.effective_message.message_id,
+        )
         return
 
     photo = update.message.photo[-1]
-    if await Image.check_unique_id(photo.file_unique_id):
-        await context.bot.send_message(chat_id=update.effective_chat.id, text='Image already in database')
-        return
-
     file = await photo.get_file()
     file_bytes = BytesIO()
     await file.download_to_memory(file_bytes)
     phash = imagehash.phash(PILImage.open(file_bytes))
-
-    if await Image.check_hash(phash):
-        await context.bot.send_message(chat_id=update.effective_chat.id, text='Image already in database')
-        return
 
     try:
         await Image.new_image(
@@ -54,25 +51,42 @@ async def save_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             phash=phash,
         )
     except django.db.utils.IntegrityError:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text='Image already in database')
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text='Image already in database',
+            reply_to_message_id=update.effective_message.message_id,
+        )
         return
     except SpamLimitException:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text='Upload limit!\ntry later')
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text='Upload limit!\ntry later',
+            reply_to_message_id=update.effective_message.message_id,
+        )
         return
 
-    await context.bot.send_message(chat_id=update.effective_chat.id, text=f'Image saved!')
+    keyboard = [
+        [
+            InlineKeyboardButton("Delete image", callback_data=f'del_by_user|{photo.file_unique_id}'),
+        ]
+    ]
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=f'Image saved!',
+        reply_to_message_id=update.effective_message.message_id,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
 
 
 @update_user
 async def send_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if photo := await Image.advanced_random_image(update.effective_user.id):
+    if photo := await Image.colab_filter_image(update.effective_user.id) or await Image.random_image(update.effective_user.id):
         keyboard = [
             [
                 InlineKeyboardButton("🚫", callback_data=f'del|{photo.file_unique_id}'),
                 InlineKeyboardButton("❤️", callback_data=f'like|{photo.file_unique_id}'),
             ]
         ]
-
         await context.bot.send_photo(
             chat_id=update.effective_chat.id,
             photo=photo.file_id,
@@ -105,11 +119,35 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await send_photo(update, context)
 
 
+@update_user
+async def delete_image(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Parses the CallbackQuery and updates the message text."""
+    query = update.callback_query
+    print('delete_image', query.data)
+    await query.answer()
+    _, unique_id = query.data.split('|')
+    await Image.delete_image(update.effective_user.id, unique_id)
+    await query.delete_message()
+
+
+@update_user
+async def my_stat(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    uploaded_images, likes_from, likes_to = await Profile.user_stat(update.effective_user.id)
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=f'images uploaded: {uploaded_images}\n'
+             f'likes from you: {likes_from}\n'
+             f'likes to you: {likes_to}',
+    )
+
+
 handlers = [
     CommandHandler('start', start, block=False),
     CommandHandler('help', start, block=False),
     CommandHandler('image', send_photo, block=False),
+    CommandHandler('stat', my_stat, block=False),
     MessageHandler(filters.PHOTO & (~filters.COMMAND), save_photo, block=False),
-    CallbackQueryHandler(button, block=False)
+    CallbackQueryHandler(delete_image, pattern='del_by_user', block=False),
+    CallbackQueryHandler(button, block=False),
 ]
 tg_application.add_handlers(handlers)

@@ -1,9 +1,10 @@
 import asyncio
 import time
 
+import telegram
 from decouple import config
 from django.core.management.base import BaseCommand
-from tgbot.models import Image, ImageScore, Profile
+from tgbot.models import Image, Profile
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 
 TOKEN = config("API_TOKEN")
@@ -17,7 +18,7 @@ class Command(BaseCommand):
 async def job(bot):
     profiles = await Profile.list_need_notification()
     for tg_id in profiles:
-        if photo := await Image.advanced_random_image(tg_id):
+        if photo := await Image.colab_filter_image(tg_id) or await Image.random_image(tg_id):
             keyboard = [
                 [
                     InlineKeyboardButton("🚫", callback_data=f'del|{photo.file_unique_id}'),
@@ -26,12 +27,15 @@ async def job(bot):
             ]
             print(tg_id, photo.file_id)
             async with bot:
-                await bot.send_photo(
-                    chat_id=tg_id,
-                    caption='Found some arts for you!',
-                    photo=photo.file_id,
-                    reply_markup=InlineKeyboardMarkup(keyboard)
-                )
+                try:
+                    await bot.send_photo(
+                        chat_id=tg_id,
+                        caption='Found some arts for you!',
+                        photo=photo.file_id,
+                        reply_markup=InlineKeyboardMarkup(keyboard)
+                    )
+                except telegram.error.Forbidden:
+                    pass
                 await Profile.update_notification(tg_id)
 
 
