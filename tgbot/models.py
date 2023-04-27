@@ -49,8 +49,8 @@ class Profile(models.Model):
     @sync_to_async
     def user_stat(cls, profile_id):
         uploaded_images = cls.objects.get(tg_id=profile_id).image.count()
-        likes_from = ImageScore.objects.filter(profile__tg_id=profile_id, score=1).count()
-        likes_to = ImageScore.objects.filter(image__profile__tg_id=profile_id, score=1).count()
+        likes_from = ImageScore.objects.exclude(image__profile__tg_id=profile_id).filter(profile__tg_id=profile_id, score=1).count()
+        likes_to = ImageScore.objects.exclude(profile__tg_id=profile_id).filter(image__profile__tg_id=profile_id, score=1).count()
         return uploaded_images, likes_from, likes_to
 
     class Meta:
