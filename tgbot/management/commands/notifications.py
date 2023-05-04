@@ -1,13 +1,11 @@
-import asyncio
 import time
 
-import telegram
-from decouple import config
+import telebot
 from django.core.management.base import BaseCommand
-from tgbot.models import Image, Profile
-from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
+from telebot.util import quick_markup
 
-TOKEN = config("API_TOKEN")
+from tgbot.models import Image, Profile
+from project.settings import bot
 
 
 class Command(BaseCommand):
@@ -15,36 +13,32 @@ class Command(BaseCommand):
         notifications_loop()
 
 
-async def job(bot):
-    profiles = await Profile.list_need_notification()
+def job():
+    profiles = Profile.list_need_notification()
     for tg_id in profiles:
-        if photo := await Image.colab_filter_image(tg_id) or await Image.random_image(tg_id):
-            keyboard = [
-                [
-                    InlineKeyboardButton("🚫", callback_data=f'del|{photo.file_unique_id}'),
-                    InlineKeyboardButton("❤️", callback_data=f'like|{photo.file_unique_id}'),
-                ]
-            ]
-            print(tg_id, photo.file_id)
-            async with bot:
-                try:
-                    await bot.send_photo(
-                        chat_id=tg_id,
-                        caption='Found some arts for you!',
-                        photo=photo.file_id,
-                        reply_markup=InlineKeyboardMarkup(keyboard)
-                    )
-                except telegram.error.Forbidden:
-                    pass
-                await Profile.update_notification(tg_id)
+        if photo := Image.colab_filter_image(tg_id) or Image.random_image(tg_id):
+            markup = quick_markup({
+                "🚫": {'callback_data': f'dislike|{photo.file_unique_id}'},
+                "❤️": {'callback_data': f'like|{photo.file_unique_id}'},
+            })
+            try:
+                bot.send_photo(
+                    chat_id=tg_id,
+                    photo=photo.file_id,
+                    caption="Found image for you!",
+                    reply_markup=markup
+                )
+            except telebot.apihelper.ApiTelegramException:
+                Profile.block_profile(tg_id)
+            else:
+                Profile.update_notification(tg_id)
 
 
 def notifications_loop():
-    bot = Bot(TOKEN)
     while True:
         try:
-            asyncio.run(job(bot))
+            job()
         except Exception as e:
             print(e)
         print('end loop')
-        time.sleep(5 * 60)
+        time.sleep(15 * 60)

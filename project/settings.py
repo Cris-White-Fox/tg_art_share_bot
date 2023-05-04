@@ -11,9 +11,10 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 """
 import logging
 from pathlib import Path
+
+import telebot
 from decouple import config
 from dotenv import load_dotenv
-from telegram.ext import ApplicationBuilder
 
 load_dotenv()
 
@@ -132,4 +133,4 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.DEBUG
 )
-tg_application = ApplicationBuilder().token(config("API_TOKEN")).build()
+bot = telebot.TeleBot(config("API_TOKEN"), threaded=False)
