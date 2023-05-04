@@ -134,3 +134,4 @@ logging.basicConfig(
     level=logging.DEBUG
 )
 bot = telebot.TeleBot(config("API_TOKEN"), threaded=False)
+bot.set_webhook(url=config("WEBHOOK_URL"))
