@@ -1,7 +1,7 @@
 import datetime
 from django.utils import timezone
 from django.db import models
-from django.db.models import Max, Sum, Q
+from django.db.models import Max, Sum, Q, Count
 
 
 def datetime_now():
@@ -113,18 +113,42 @@ class Image(models.Model):
 
     @classmethod
     def colab_filter_image(cls, profile_id):
+        if cls.objects.filter(image_score__profile__tg_id=profile_id).count() < 20:
+            return
         my_likes = cls.objects.filter(image_score__profile__tg_id=profile_id, image_score__score__gte=1)
         my_dislikes = cls.objects.filter(image_score__profile__tg_id=profile_id, image_score__score__lte=0)
-        profiles = Profile.objects.exclude(tg_id=profile_id).values('tg_id').annotate(
-            taste_similarity=Sum(
-                "image_score__score",
-                filter=Q(image_score__image__in=my_likes)
-            ) - Sum(
-                "image_score__score",
-                filter=Q(image_score__image__in=my_dislikes)
-            )
-        ).filter(taste_similarity__gte=10).order_by('-taste_similarity')[:50]
-        if image := cls.objects.exclude(image_score__profile__tg_id=profile_id).values('file_unique_id').annotate(
+        profiles = Profile.objects.exclude(tg_id=profile_id).values('tg_id') \
+            .annotate(
+                count=Count(
+                    "image_score",
+                    filter=Q(image_score__image__in=my_likes) | Q(image_score__image__in=my_dislikes)
+                )
+            ).annotate(
+                taste_sim=100 * (
+                        Sum(
+                            "image_score__score",
+                            filter=Q(image_score__image__in=my_likes)
+                        ) + Sum(
+                            "image_score__score",
+                            filter=Q(image_score__image__in=my_dislikes)
+                        )
+                ) / Count(
+                    "image_score",
+                    filter=Q(image_score__image__in=my_likes) | Q(image_score__image__in=my_dislikes)
+                )
+            ).filter(taste_sim__gte=50, count__gte=10).order_by('-taste_sim')[:50]
+        if not profiles:
+            return
+        disliked_profiles = Profile.objects.filter(
+            image__image_score__profile__tg_id=profile_id,
+            image__image_score__score__lte=0,
+            image__image_score__datetime__gte=datetime_now() - datetime.timedelta(minutes=15)
+        )
+        if image := cls.objects\
+                .exclude(image_score__profile__tg_id=profile_id)\
+                .exclude(profile__in=disliked_profiles)\
+                .values('file_unique_id')\
+                .annotate(
                     taste_similarity=Sum(
                         "image_score__score",
                         filter=Q(image_score__profile__tg_id__in=profiles.values('tg_id'))

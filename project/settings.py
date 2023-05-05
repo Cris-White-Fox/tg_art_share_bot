@@ -32,7 +32,7 @@ SECRET_KEY = config("DJANGO_SECRET_KEY", default="123")
 DEBUG = True
 
 ALLOWED_HOSTS = []
-
+ALLOWED_HOSTS += config("ALLOWED_HOSTS", default="").split(',')
 
 # Application definition
 
@@ -122,16 +122,22 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 
-STATIC_URL = 'static/'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+MEDIA_URL = 'media/'
+MEDIA_ROOT = BASE_DIR.joinpath(MEDIA_URL)
+
+STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR.joinpath(STATIC_URL)
+
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.DEBUG
 )
 bot = telebot.TeleBot(config("API_TOKEN"), threaded=False)
-bot.set_webhook(url=config("WEBHOOK_URL"))
+if webhook_url := config("WEBHOOK_URL", default=None):
+    bot.set_webhook(url=webhook_url)
