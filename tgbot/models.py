@@ -13,15 +13,17 @@ class Profile(models.Model):
     name = models.TextField(verbose_name="Имя пользователя", default="")
     last_activity = models.DateTimeField(verbose_name="Активность пользователя", default=datetime_now)
     last_bot_message = models.DateTimeField(verbose_name="Сообщение от бота", default=datetime_now)
+    language_code = models.TextField(verbose_name="Код языка", default="en")
 
     @classmethod
-    def update_profile(cls, profile_id, name):
+    def update_profile(cls, profile_id, name, language_code):
         return cls.objects.update_or_create(
             tg_id=profile_id,
             defaults={
                 "name": name,
                 "last_activity": datetime_now(),
                 "last_bot_message": datetime_now(),
+                "language_code": language_code
             },
         )[0]
 
@@ -69,16 +71,14 @@ class Image(models.Model):
 
     @classmethod
     def check_limit(cls, profile_id):
+        ct = datetime_now().replace(second=0, microsecond=0)
         return cls.objects.filter(
             profile=Profile.objects.get(tg_id=profile_id),
-            datetime__gte=datetime.datetime.now(tz=timezone.utc) - datetime.timedelta(minutes=10),
+            datetime__gte=ct.replace(minute=ct.minute//10*10),
         ).count() >= 50 or cls.objects.filter(
             profile=Profile.objects.get(tg_id=profile_id),
-            datetime__gte=datetime.datetime.now(tz=timezone.utc) - datetime.timedelta(hours=24),
-        ).count() >= 250 or cls.objects.filter(
-            profile=Profile.objects.get(tg_id=profile_id),
-            datetime__gte=datetime.datetime.now(tz=timezone.utc) - datetime.timedelta(days=5),
-        ).count() >= 500
+            datetime__gte=ct.replace(hour=0, minute=0),
+        ).count() >= 250
 
     @classmethod
     def new_image(cls, profile_id, file_id, file_unique_id, phash):
@@ -153,7 +153,7 @@ class Image(models.Model):
                         "image_score__score",
                         filter=Q(image_score__profile__tg_id__in=profiles.values('tg_id'))
                     )
-                ).order_by('-taste_similarity').first():
+                ).order_by('-taste_similarity', '?').first():
             return cls.objects.get(file_unique_id=image['file_unique_id'])
 
     class Meta:

@@ -7,15 +7,33 @@ from .models import Profile, Image, ImageScore
 
 @admin.register(Profile)
 class ProfileAdmin(admin.ModelAdmin):
-    list_display = ('tg_id', 'name', 'images_uploaded', 'score_count', 'last_activity', 'last_bot_message')
+    list_display = (
+        'tg_id',
+        'name',
+        'images_uploaded',
+        'likes_count',
+        'dislikes_count',
+        'last_activity',
+        'last_bot_message'
+    )
     search_fields = ('tg_id', 'name')
 
     def get_queryset(self, request):
         qs = super(ProfileAdmin, self)\
             .get_queryset(request)\
-            .annotate(image__count=models.Count('image', distinct=True))\
+            .annotate()\
             .annotate(
-                image_score__count=models.Count('image_score', distinct=True) - models.Count('image', distinct=True)
+                image__count=models.Count('image', distinct=True),
+                likes__count=models.Count(
+                    'image_score',
+                    distinct=True,
+                    filter=Q(image_score__score__gte=1)
+                ) - models.Count('image', distinct=True),
+                dislikes__count=models.Count(
+                    'image_score',
+                    distinct=True,
+                    filter=Q(image_score__score__lte=0)
+                ),
             )
         return qs
 
@@ -23,9 +41,13 @@ class ProfileAdmin(admin.ModelAdmin):
     def images_uploaded(self, obj):
         return obj.image__count
 
-    @admin.display(ordering="image_score__count", description='Поставлено оценок')
-    def score_count(self, obj):
-        return obj.image_score__count
+    @admin.display(ordering="likes__count", description='Лайки')
+    def likes_count(self, obj):
+        return obj.likes__count
+
+    @admin.display(ordering="likes__count", description='Дизлайки')
+    def dislikes_count(self, obj):
+        return obj.dislikes__count
 
 
 @admin.register(Image)

@@ -2,10 +2,10 @@ import time
 
 import telebot
 from django.core.management.base import BaseCommand
-from telebot.util import quick_markup
 
 from tgbot.models import Image, Profile
 from project.settings import bot
+from tgbot.tg_logic import response_text, send_photo_with_default_markup
 
 
 class Command(BaseCommand):
@@ -16,18 +16,16 @@ class Command(BaseCommand):
 def job():
     profiles = Profile.list_need_notification()
     for tg_id in profiles:
-        if photo := Image.colab_filter_image(tg_id) or Image.random_image(tg_id):
-            markup = quick_markup({
-                "🚫": {'callback_data': f'dislike|{photo.file_unique_id}'},
-                "❤️": {'callback_data': f'like|{photo.file_unique_id}'},
-            })
+        if photo := Image.colab_filter_image(tg_id):
             try:
-                bot.send_photo(
+                bot.send_message(
                     chat_id=tg_id,
-                    photo=photo.file_id,
-                    caption="Found image for you!",
-                    reply_markup=markup
+                    text=response_text(
+                        template='img_notification',
+                        tg_id=tg_id
+                    )
                 )
+                send_photo_with_default_markup(tg_id, photo)
             except telebot.apihelper.ApiTelegramException:
                 Profile.block_profile(tg_id)
             else:

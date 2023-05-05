@@ -19,7 +19,7 @@ TIMERS = {}
 def update_user(func):
     def inner(message: Message):
         logging.debug(message)
-        Profile.update_profile(message.from_user.id, message.from_user.full_name)
+        Profile.update_profile(message.from_user.id, message.from_user.full_name, message.from_user.language_code)
         return func(message)
     return inner
 
@@ -73,11 +73,16 @@ response_templates_dict = {
             'Likes from you: {likes_from}\n'
             'Likes to you: {likes_to}',
     },
+    'img_notification': {
+        'ru': 'Для тебя нашлось несколько новых изображений, надеюсь тебе они понравятся!',
+        'default': "Found some images for you, hope you like them!",
+    }
 }
 
 
-def response_text(template, lang='default', str_args=None):
+def response_text(template, tg_id, str_args=None):
     response_lang_dict = response_templates_dict[template]
+    lang = Profile.objects.get(tg_id=tg_id).language_code
     if lang not in response_lang_dict.keys():
         lang = 'default'
     if str_args:
@@ -94,7 +99,7 @@ def help_(message):
         chat_id=message.chat.id,
         text=response_text(
             template='help',
-            lang=message.from_user.language_code
+            tg_id=message.from_user.id
         ),
     )
 
@@ -109,9 +114,11 @@ def save_photo(message: Message):
             message=message,
             text=response_text(
                 template='upload_limit',
-                lang=message.from_user.language_code
+                tg_id=message.from_user.id
             ),
         )
+        if photo := Image.colab_filter_image(profile_id) or Image.random_image(profile_id):
+            send_photo_with_default_markup(message.chat.id, photo)
         return
 
     file_info = bot.get_file(message.photo[1].file_id)
@@ -132,7 +139,7 @@ def save_photo(message: Message):
             message=message,
             text=response_text(
                 template='already_in_db',
-                lang=message.from_user.language_code
+                tg_id=message.from_user.id
             ),
         )
         return
@@ -144,9 +151,21 @@ def save_photo(message: Message):
         message=message,
         text=response_text(
             template='img_saved',
-            lang=message.from_user.language_code
+            tg_id=message.from_user.id
         ),
         reply_markup=markup,
+    )
+
+
+def send_photo_with_default_markup(chat_id, photo):
+    markup = quick_markup({
+        "🚫": {'callback_data': f'dislike|{photo.file_unique_id}'},
+        "❤️": {'callback_data': f'like|{photo.file_unique_id}'},
+    })
+    bot.send_photo(
+        chat_id=chat_id,
+        photo=photo.file_id,
+        reply_markup=markup
     )
 
 
@@ -155,23 +174,14 @@ def save_photo(message: Message):
 @timeit
 def send_photo(message):
     user_id = message.from_user.id
-    print('send_photo', message)
     if photo := Image.colab_filter_image(user_id) or Image.random_image(user_id):
-        markup = quick_markup({
-            "🚫": {'callback_data': f'dislike|{photo.file_unique_id}'},
-            "❤️": {'callback_data': f'like|{photo.file_unique_id}'},
-        })
-        bot.send_photo(
-            chat_id=message.chat.id,
-            photo=photo.file_id,
-            reply_markup=markup
-        )
+        send_photo_with_default_markup(message.chat.id, photo)
     else:
         bot.send_message(
             chat_id=message.chat.id,
             text=response_text(
                 template='img_not_found',
-                lang=message.from_user.language_code
+                tg_id=message.from_user.id
             ),
         )
 
@@ -185,7 +195,7 @@ def delete_photo(callback: CallbackQuery):
         callback_query_id=callback.id,
         text=response_text(
             template='img_deleted',
-            lang=callback.from_user.language_code
+            tg_id=callback.from_user.id
         ),
     )
     bot.delete_message(callback.message.chat.id, callback.message.id)
@@ -226,7 +236,7 @@ def my_stat(message: Message) -> None:
         chat_id=message.chat.id,
         text=response_text(
             template='stat',
-            lang=message.from_user.language_code
+            tg_id=message.from_user.id
         ).format(
             uploaded_images=uploaded_images,
             likes_from=likes_from,
