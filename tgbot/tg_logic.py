@@ -16,6 +16,16 @@ from tgbot.models import Image, ImageScore, Profile
 TIMERS = {}
 
 
+def timers_view():
+    return {
+        func_name: {
+            "count": len(timer),
+            "mean_time": sum(timer)/len(timer),
+            "worst 10": [round(t, 3) for t in sorted(timer, reverse=True)[:10]],
+        } for func_name, timer in TIMERS.items()
+    }
+
+
 def update_user(func):
     def inner(message: Message):
         logging.debug(message)
@@ -33,15 +43,17 @@ def timeit(func):
 
         timer = time.time() - start
         TIMERS[str(func)] = [timer] + TIMERS.get(str(func), [])[:1000]
-        print(str(func), TIMERS[str(func)][0], sum(TIMERS[str(func)])/len(TIMERS[str(func)]))
+        print(timers_view())
         return result
     return inner
 
 
 response_templates_dict = {
     'help': {
-        'ru': "Хей, пришли мне арт, которым хочешь поделиться и я найду того, кому он понравится!",
-        'default': "Hey, send me the art you want to share and I'll find someone who likes it!",
+        'ru': "Хей, пришли мне арт, которым хочешь поделиться и я найду того, кому он понравится!\n"
+              "Либо иcпользуй команду /image",
+        'default': "Hey, send me the art you want to share and I'll find someone who likes it!\n"
+                   "Or use /image",
     },
     'img_saved': {
         'ru': "Изображение сохранено!",
@@ -129,7 +141,7 @@ def save_photo(message: Message):
 
     try:
         Image.new_image(
-            profile_id=profile_id,
+            tg_id=profile_id,
             file_id=photo.file_id,
             file_unique_id=photo.file_unique_id,
             phash=phash,
@@ -216,7 +228,7 @@ def score_photo(callback: CallbackQuery):
     try:
         print('callback.from_user.id', callback.from_user.id)
         ImageScore.new_score(
-            profile_id=callback.from_user.id,
+            tg_id=callback.from_user.id,
             file_unique_id=unique_id,
             score=score,
         )

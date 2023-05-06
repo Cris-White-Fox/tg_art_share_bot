@@ -13,6 +13,8 @@ class ProfileAdmin(admin.ModelAdmin):
         'images_uploaded',
         'likes_count',
         'dislikes_count',
+        'outerlikes_count',
+        'outerdislikes_count',
         'last_activity',
         'last_bot_message'
     )
@@ -34,6 +36,16 @@ class ProfileAdmin(admin.ModelAdmin):
                     distinct=True,
                     filter=Q(image_score__score__lte=0)
                 ),
+                outerlikes__count=models.Count(
+                    'image__image_score',
+                    distinct=True,
+                    filter=Q(image__image_score__score__gte=1)
+                ) - models.Count('image', distinct=True),
+                outerdislikes__count=models.Count(
+                    'image__image_score',
+                    distinct=True,
+                    filter=Q(image__image_score__score__lte=0)
+                ),
             )
         return qs
 
@@ -41,13 +53,21 @@ class ProfileAdmin(admin.ModelAdmin):
     def images_uploaded(self, obj):
         return obj.image__count
 
-    @admin.display(ordering="likes__count", description='Лайки')
+    @admin.display(ordering="likes__count", description='Лайки от')
     def likes_count(self, obj):
         return obj.likes__count
 
-    @admin.display(ordering="likes__count", description='Дизлайки')
+    @admin.display(ordering="dislikes__count", description='Дизлайки от')
     def dislikes_count(self, obj):
         return obj.dislikes__count
+
+    @admin.display(ordering="outerlikes__count", description='Лайки для')
+    def outerlikes_count(self, obj):
+        return obj.outerlikes__count
+
+    @admin.display(ordering="outerdislikes__count", description='Дизлайки для')
+    def outerdislikes_count(self, obj):
+        return obj.outerdislikes__count
 
 
 @admin.register(Image)

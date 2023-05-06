@@ -10,13 +10,13 @@ from tgbot.tg_logic import response_text, send_photo_with_default_markup
 
 class Command(BaseCommand):
     def handle(self, *args, **options):
-        notifications_loop()
+        job()
 
 
 def job():
     profiles = Profile.list_need_notification()
     for tg_id in profiles:
-        if photo := Image.colab_filter_image(tg_id):
+        if photo := Image.colab_filter_image(tg_id) or Image.random_image(tg_id):
             try:
                 bot.send_message(
                     chat_id=tg_id,

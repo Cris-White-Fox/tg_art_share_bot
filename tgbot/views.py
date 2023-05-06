@@ -1,7 +1,7 @@
 import telebot
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from tgbot.tg_logic import bot, TIMERS
+from tgbot.tg_logic import bot, timers_view
 
 
 data_list = []
@@ -18,4 +18,4 @@ def telegram_handle(request):
         ])
         return JsonResponse({"ok": "POST processed"})
     else:
-        return JsonResponse({"ok": "GET processed", "TIMERS": TIMERS})
+        return JsonResponse({"ok": "GET processed", "TIMERS": timers_view()})
