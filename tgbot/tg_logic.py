@@ -238,7 +238,10 @@ def delete_photo(callback: CallbackQuery):
 )
 @timeit
 def score_photo(callback: CallbackQuery):
-    action, unique_id, taste_similarity = callback.data.split('|')
+    if len(callback.data.split('|')) == 3:
+        action, unique_id, taste_similarity = callback.data.split('|')
+    else:
+        action, unique_id = callback.data.split('|')
     if action == 'dislike':
         score = -1
         global IMAGES_CACHE
