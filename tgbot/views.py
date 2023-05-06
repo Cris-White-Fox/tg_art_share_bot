@@ -1,3 +1,5 @@
+import logging
+
 import telebot
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -13,9 +15,12 @@ def telegram_handle(request):
         global data_list
         data = request.body.decode("utf-8")
         data_list.append(data)
-        bot.process_new_updates([
-            telebot.types.Update.de_json(data)
-        ])
+        try:
+            bot.process_new_updates([
+                telebot.types.Update.de_json(data)
+            ])
+        except Exception as e:
+            logging.exception(e)
         return JsonResponse({"ok": "POST processed"})
     else:
         return JsonResponse({"ok": "GET processed", "TIMERS": timers_view(), "SCORES": score_results_view()})
