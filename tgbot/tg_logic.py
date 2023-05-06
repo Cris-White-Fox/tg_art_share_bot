@@ -226,14 +226,11 @@ def score_photo(callback: CallbackQuery):
     action, unique_id = callback.data.split('|')
     if action == 'dislike':
         score = -1
-        bot.delete_message(callback.message.chat.id, callback.message.id)
         global IMAGES_CACHE
         IMAGES_CACHE[callback.from_user.id] = []
     else:
         score = 1
-        bot.edit_message_reply_markup(callback.message.chat.id, callback.message.id)
     try:
-        print('callback.from_user.id', callback.from_user.id)
         ImageScore.new_score(
             tg_id=callback.from_user.id,
             file_unique_id=unique_id,
@@ -244,6 +241,10 @@ def score_photo(callback: CallbackQuery):
     callback.message.from_user = callback.from_user
     send_photo(callback.message)
     bot.answer_callback_query(callback_query_id=callback.id)
+    if action == 'dislike':
+        bot.delete_message(callback.message.chat.id, callback.message.id)
+    else:
+        bot.edit_message_reply_markup(callback.message.chat.id, callback.message.id)
 
 
 @bot.message_handler(commands=['stat'])
