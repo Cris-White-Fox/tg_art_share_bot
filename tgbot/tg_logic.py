@@ -10,8 +10,7 @@ from telebot.util import quick_markup
 
 from project.settings import bot
 
-from tgbot.models import Image, ImageScore, Profile
-
+from tgbot.models import Image, ImageScore, Profile, Report
 
 TIMERS = {}
 IMAGES_CACHE = {}
@@ -106,6 +105,22 @@ response_templates_dict = {
     'img_notification': {
         'ru': 'Для тебя нашлось несколько новых изображений, надеюсь тебе они понравятся!',
         'default': "Found some images for you, hope you like them!",
+    },
+    'report_photo': {
+        'ru': 'Действительно хочешь отправить жалобу на это изображение?',
+        'default': "Do you really want to send a complaint about this image?",
+    },
+    'report_photo_send': {
+        'ru': 'Жалоба отправлена!',
+        'default': "Complaint was send!",
+    },
+    'too_many_reports': {
+        'ru': 'Слишком много жалоб подряд!',
+        'default': "Too many complaints!",
+    },
+    'report_limit': {
+        'ru': 'Загрузка изображений ограничена из-за жалоб пользователей!',
+        'default': "Image uploads are limited due to user complaints!",
     }
 }
 
@@ -139,6 +154,16 @@ def help_(message):
 @timeit
 def save_photo(message: Message):
     profile_id = message.from_user.id
+    if Report.check_reported(profile_id):
+        bot.reply_to(
+            message=message,
+            text=response_text(
+                template='report_limit',
+                tg_id=message.from_user.id
+            ),
+        )
+        return
+
     if Image.check_limit(profile_id):
         bot.reply_to(
             message=message,
@@ -187,9 +212,10 @@ def save_photo(message: Message):
 
 def send_photo_with_default_markup(chat_id, photo):
     markup = quick_markup({
-        "🚫": {'callback_data': f'dislike|{photo["file_unique_id"]}|{photo["taste_similarity"]}'},
+        "❗️": {'callback_data': f'report|{photo["file_unique_id"]}'},
+        "👎": {'callback_data': f'dislike|{photo["file_unique_id"]}|{photo["taste_similarity"]}'},
         "❤️": {'callback_data': f'like|{photo["file_unique_id"]}|{photo["taste_similarity"]}'},
-    })
+    }, row_width=3)
     bot.send_photo(
         chat_id=chat_id,
         photo=Image.objects.get(file_unique_id=photo["file_unique_id"]).file_id,
@@ -242,6 +268,7 @@ def score_photo(callback: CallbackQuery):
         action, unique_id, taste_similarity = callback.data.split('|')
     else:
         action, unique_id = callback.data.split('|')
+        taste_similarity = 0
     if action == 'dislike':
         score = -1
         global IMAGES_CACHE
@@ -282,4 +309,94 @@ def my_stat(message: Message) -> None:
             likes_from=likes_from,
             likes_to=likes_to
         ),
+    )
+
+
+@bot.callback_query_handler(
+    func=lambda callback: callback.data.startswith('confirm_report') or callback.data.startswith('reject_report')
+)
+def confirm_report(callback: CallbackQuery):
+    action, unique_id = callback.data.split('|')
+    bot.answer_callback_query(callback_query_id=callback.id)
+    callback.message.from_user = callback.from_user
+    if action == "reject_report":
+        markup = quick_markup({
+            "❗️": {'callback_data': f'report|{unique_id}'},
+            "👎": {'callback_data': f'dislike|{unique_id}'},
+            "❤️": {'callback_data': f'like|{unique_id}'},
+        }, row_width=3)
+        bot.edit_message_caption(
+            chat_id=callback.message.chat.id,
+            message_id=callback.message.id,
+            caption=None,
+            reply_markup=markup,
+        )
+        return
+
+    file_info = bot.get_file(Image.objects.get(file_unique_id=unique_id).file_id)
+    file_bytes = bot.download_file(file_info.file_path)
+    buffered = io.BytesIO()
+    image = PILImage.open(io.BytesIO(file_bytes))
+    image.thumbnail((300, 300))
+    image.save(buffered, format="JPEG", quality=60)
+    file_bytes = buffered.getvalue()
+
+    score = -2
+    try:
+        ImageScore.new_score(
+            tg_id=callback.from_user.id,
+            file_unique_id=unique_id,
+            score=score,
+        )
+    except django.db.utils.IntegrityError:
+        pass
+
+    try:
+        Report.new_report(
+            tg_id=callback.from_user.id,
+            file_unique_id=unique_id,
+            image_file=file_bytes,
+        )
+    except django.db.utils.IntegrityError:
+        pass
+
+    bot.delete_message(callback.message.chat.id, callback.message.id)
+    bot.send_message(
+        chat_id=callback.message.chat.id,
+        text=response_text(
+            template='report_photo_send',
+            tg_id=callback.from_user.id
+        ),
+    )
+
+    callback.message.from_user = callback.from_user
+    send_photo(callback.message)
+
+
+@bot.callback_query_handler(func=lambda callback: callback.data.startswith('report'))
+@timeit
+def report_photo(callback: CallbackQuery):
+    if Report.check_limit(callback.from_user.id):
+        bot.send_message(
+            chat_id=callback.message.chat.id,
+            text=response_text(
+                template='too_many_reports',
+                tg_id=callback.from_user.id
+            ),
+        )
+        return
+    _, unique_id = callback.data.split('|')
+    markup = quick_markup({
+        "🔙": {'callback_data': f'reject_report|{unique_id}'},
+        "❌": {'callback_data': f'confirm_report|{unique_id}'},
+    })
+    bot.answer_callback_query(callback_query_id=callback.id)
+    bot.edit_message_caption(
+        chat_id=callback.message.chat.id,
+        message_id=callback.message.id,
+        caption=response_text(
+            template='report_photo',
+            tg_id=callback.from_user.id
+        ),
+        reply_markup=markup,
     )

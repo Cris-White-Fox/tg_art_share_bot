@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.db import models
 from django.db.models import Q
 
-from .models import Profile, Image, ImageScore
+from .models import Profile, Image, ImageScore, Report
 
 
 @admin.register(Profile)
@@ -104,3 +104,10 @@ class ImageScoreAdmin(admin.ModelAdmin):
     list_display = ('profile', 'image', 'score', 'datetime')
     list_filter = ('score', )
     search_fields = ('profile__name', 'profile__tg_id', 'image__file_unique_id', 'image__phash')
+
+
+@admin.register(Report)
+class ReportAdmin(admin.ModelAdmin):
+    list_display = ('profile', 'image', 'datetime', 'scheme_image_tag')
+    search_fields = ('profile__name', 'profile__tg_id', 'image__file_unique_id', 'image__phash')
+    readonly_fields = ('scheme_image_tag',)

@@ -1,9 +1,11 @@
 import datetime
+from base64 import b64encode
 
 from django.db.models.functions import Cast
 from django.utils import timezone
 from django.db import models
 from django.db.models import Max, Sum, Q, Count, Value
+from django.utils.safestring import mark_safe
 
 
 def datetime_now():
@@ -107,13 +109,21 @@ class Image(models.Model):
     @classmethod
     def check_limit(cls, tg_id):
         ct = datetime_now().replace(second=0, microsecond=0)
+        if cls.objects.filter(
+                    profile__tg_id=tg_id,
+                    datetime__gte=ct - datetime.timedelta(days=ct.weekday(), hours=ct.hour, minutes=ct.minute),
+                ).count() >= 500:
+            day_limit = 150
+        else:
+            day_limit = 300
+
         return cls.objects.filter(
-            profile=Profile.objects.get(tg_id=tg_id),
+            profile__tg_id=tg_id,
             datetime__gte=ct.replace(minute=ct.minute//10*10),
-        ).count() >= 50 or cls.objects.filter(
-            profile=Profile.objects.get(tg_id=tg_id),
+        ).count() >= 30 or cls.objects.filter(
+            profile__tg_id=tg_id,
             datetime__gte=ct.replace(hour=0, minute=0),
-        ).count() >= 250
+        ).count() >= day_limit
 
     @classmethod
     def new_image(cls, tg_id, file_id, file_unique_id, phash):
@@ -180,8 +190,10 @@ class Image(models.Model):
                         "image_score__score",
                         filter=Q(image_score__profile__tg_id__in=profiles.values('tg_id'))
                     ),
-                    score_count=Count("image_score")
-                ).order_by('-taste_similarity', 'score_count', '?')[:15]:
+                    score_count=Count("image_score"),
+                    report_count=Count("report"),
+                ).filter(taste_similarity__gte=0, report_count__lte=2)\
+                .order_by('-taste_similarity', 'score_count', '?')[:15]:
             return list(image_ids)
 
     class Meta:
@@ -213,3 +225,45 @@ class ImageScore(models.Model):
 
     def __str__(self) -> str:
         return f"Оценка: {self.profile} - {self.image} ({self.score})"
+
+
+class Report(models.Model):
+    profile = models.ForeignKey(Profile, verbose_name="Пользователь", related_name='report', on_delete=models.CASCADE)
+    image = models.ForeignKey(Image, verbose_name="Изображение", related_name='report', on_delete=models.CASCADE)
+    datetime = models.DateTimeField(verbose_name="Дата взаимодействия", default=datetime_now)
+    image_file = models.BinaryField(verbose_name="Дата взаимодействия", blank=True)
+
+    @classmethod
+    def check_limit(cls, tg_id):
+        ct = datetime_now().replace(second=0, microsecond=0)
+        return cls.objects.filter(
+            profile__tg_id=tg_id,
+            datetime__gte=ct.replace(hour=0, minute=0, second=0, microsecond=0),
+        ).count() >= 15
+
+    @classmethod
+    def new_report(cls, tg_id, file_unique_id, image_file):
+        return cls.objects.create(
+            profile=Profile.objects.get(tg_id=tg_id),
+            image=Image.objects.get(file_unique_id=file_unique_id),
+            image_file=image_file,
+        )
+
+    @classmethod
+    def check_reported(cls, tg_id):
+        ct = datetime_now().replace(second=0, microsecond=0)
+        return cls.objects.filter(
+            image__profile__tg_id=tg_id,
+            image__datetime__gte=ct.replace(day=1, hour=0, minute=0, second=0, microsecond=0),
+        ).values('image__profile').distinct().count() >= 3 or cls.objects.filter(
+            image__profile__tg_id=tg_id,
+            image__datetime__gte=ct.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0),
+        ).values('image__profile').distinct().count() >= 10
+
+    def scheme_image_tag(self):
+        return mark_safe('<img src = "data: image/jpeg; base64, {}" width="300">'.format(
+            b64encode(self.image_file).decode('utf8')
+        ))
+
+    scheme_image_tag.short_description = 'Image'
+    scheme_image_tag.allow_tags = True
