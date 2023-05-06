@@ -16,7 +16,7 @@ class Command(BaseCommand):
 def job():
     profiles = Profile.list_need_notification()
     for tg_id in profiles:
-        if photo := Image.colab_filter_image(tg_id) or Image.random_image(tg_id):
+        if file_unique_ids := Image.colab_filter_images(tg_id) or Image.random_images(tg_id):
             try:
                 bot.send_message(
                     chat_id=tg_id,
@@ -25,7 +25,7 @@ def job():
                         tg_id=tg_id
                     )
                 )
-                send_photo_with_default_markup(tg_id, photo)
+                send_photo_with_default_markup(tg_id, file_unique_ids[0])
             except telebot.apihelper.ApiTelegramException:
                 Profile.block_profile(tg_id)
             else:

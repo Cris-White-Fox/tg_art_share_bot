@@ -136,15 +136,19 @@ class Image(models.Model):
         cls.objects.get(profile__tg_id=tg_id, file_unique_id=file_unique_id).delete()
 
     @classmethod
-    def random_image(cls, tg_id):
+    def random_images(cls, tg_id):
         profiles = Profile.objects.exclude(tg_id=tg_id).exclude(image__isnull=True).values('tg_id').annotate(
             last_dislike=Max(
                 "image__image_score__datetime",
                 filter=Q(image__image_score__profile__tg_id=tg_id) & Q(image__image_score__score__lte=0))
         ).order_by('last_dislike')[:50]
         for profile in profiles:
-            if image := Image.objects.filter(profile__tg_id=profile['tg_id']).exclude(image_score__profile__tg_id=tg_id).order_by('?').first():
-                return image
+            if file_unique_ids := list(Image.objects\
+                    .filter(profile__tg_id=profile['tg_id'])\
+                    .exclude(image_score__profile__tg_id=tg_id)\
+                    .order_by('?')\
+                    .values_list('file_unique_id', flat=True)[:15]):
+                return file_unique_ids
 
     @classmethod
     def get_likes(cls, tg_id):
@@ -155,7 +159,7 @@ class Image(models.Model):
         return cls.objects.filter(image_score__profile__tg_id=tg_id, image_score__score__lte=0)
 
     @classmethod
-    def colab_filter_image(cls, tg_id):
+    def colab_filter_images(cls, tg_id):
         profiles = Profile.get_similar_profiles(tg_id)
         if not profiles:
             return
@@ -164,7 +168,7 @@ class Image(models.Model):
             image__image_score__score__lte=0,
             image__image_score__datetime__gte=datetime_now() - datetime.timedelta(minutes=15)
         )
-        if image := cls.objects\
+        if image_ids := list(cls.objects\
                 .exclude(image_score__profile__tg_id=tg_id)\
                 .exclude(profile__in=disliked_profiles)\
                 .values('file_unique_id')\
@@ -174,8 +178,8 @@ class Image(models.Model):
                         filter=Q(image_score__profile__tg_id__in=profiles.values('tg_id'))
                     ),
                     score_count=Count("image_score")
-                ).order_by('-taste_similarity', 'score_count', '?').first():
-            return cls.objects.get(file_unique_id=image['file_unique_id'])
+                ).order_by('-taste_similarity', 'score_count', '?').values_list('file_unique_id', flat=True)[:15]):
+            return image_ids
 
     class Meta:
         verbose_name = "Изображение"

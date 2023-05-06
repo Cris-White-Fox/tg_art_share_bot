@@ -14,6 +14,7 @@ from tgbot.models import Image, ImageScore, Profile
 
 
 TIMERS = {}
+IMAGES_CACHE = {}
 
 
 def timers_view():
@@ -68,8 +69,10 @@ response_templates_dict = {
         'default': 'Images not found!\nTry later'
     },
     'upload_limit': {
-        'ru': 'Слишком много изображений!\nПодожди немного и попробуй снова',
-        'default': 'Upload limit!\ntry later',
+        'ru': 'Слишком много изображений!\n'
+              'Подожди немного и попробуй снова.\n'
+              'Пока можешь полистать чужие арты! Используй /image',
+        'default': 'Upload limit!\nTry later or use /image',
     },
     'already_in_db': {
         "ru": "Такое изображение уже есть в базе!",
@@ -129,8 +132,6 @@ def save_photo(message: Message):
                 tg_id=message.from_user.id
             ),
         )
-        if photo := Image.colab_filter_image(profile_id) or Image.random_image(profile_id):
-            send_photo_with_default_markup(message.chat.id, photo)
         return
 
     file_info = bot.get_file(message.photo[1].file_id)
@@ -169,14 +170,14 @@ def save_photo(message: Message):
     )
 
 
-def send_photo_with_default_markup(chat_id, photo):
+def send_photo_with_default_markup(chat_id, file_unique_id):
     markup = quick_markup({
-        "🚫": {'callback_data': f'dislike|{photo.file_unique_id}'},
-        "❤️": {'callback_data': f'like|{photo.file_unique_id}'},
+        "🚫": {'callback_data': f'dislike|{file_unique_id}'},
+        "❤️": {'callback_data': f'like|{file_unique_id}'},
     })
     bot.send_photo(
         chat_id=chat_id,
-        photo=photo.file_id,
+        photo=Image.objects.get(file_unique_id=file_unique_id).file_id,
         reply_markup=markup
     )
 
@@ -186,8 +187,12 @@ def send_photo_with_default_markup(chat_id, photo):
 @timeit
 def send_photo(message):
     user_id = message.from_user.id
-    if photo := Image.colab_filter_image(user_id) or Image.random_image(user_id):
-        send_photo_with_default_markup(message.chat.id, photo)
+    global IMAGES_CACHE
+    if IMAGES_CACHE.get(user_id):
+        send_photo_with_default_markup(message.chat.id, IMAGES_CACHE[user_id].pop())
+    elif file_unique_ids := Image.colab_filter_images(user_id) or Image.random_images(user_id):
+        IMAGES_CACHE[user_id] = file_unique_ids
+        send_photo_with_default_markup(message.chat.id, IMAGES_CACHE[user_id].pop())
     else:
         bot.send_message(
             chat_id=message.chat.id,
@@ -222,6 +227,8 @@ def score_photo(callback: CallbackQuery):
     if action == 'dislike':
         score = -1
         bot.delete_message(callback.message.chat.id, callback.message.id)
+        global IMAGES_CACHE
+        IMAGES_CACHE[callback.from_user.id] = []
     else:
         score = 1
         bot.edit_message_reply_markup(callback.message.chat.id, callback.message.id)
