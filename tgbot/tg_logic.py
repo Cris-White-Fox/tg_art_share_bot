@@ -119,9 +119,13 @@ response_templates_dict = {
         'default': "Too many complaints!",
     },
     'report_limit': {
-        'ru': 'Загрузка изображений ограничена из-за жалоб пользователей!',
-        'default': "Image uploads are limited due to user complaints!",
-    }
+        'ru': 'Загрузка изображений ограничена из-за жалоб пользователей!\n Проверь /reports',
+        'default': "Image uploads are limited due to user complaints!\nCheck /reports",
+    },
+    'reported_photo_list': {
+        'ru': 'Изображения, на которые пожаловались другие пользователи.\nИх можно удалить, чтобы снять ограничения.',
+        'default': "Images that other users have complained about.\nYou can delete them to remove restrictions.",
+    },
 }
 
 
@@ -400,3 +404,25 @@ def report_photo(callback: CallbackQuery):
         ),
         reply_markup=markup,
     )
+
+
+@bot.message_handler(commands=['reports'])
+@update_user
+@timeit
+def my_stat(message: Message) -> None:
+    bot.send_message(
+        chat_id=message.chat.id,
+        text=response_text(
+            template='reported_photo_list',
+            tg_id=message.from_user.id
+        ),
+    )
+    for photo in Image.list_reported_photos(message.from_user.id):
+        markup = quick_markup({
+            'Delete': {'callback_data': 'delete|' + photo["file_unique_id"]},
+        })
+        bot.send_photo(
+            chat_id=message.chat.id,
+            photo=Image.objects.get(file_unique_id=photo["file_unique_id"]).file_id,
+            reply_markup=markup,
+        )

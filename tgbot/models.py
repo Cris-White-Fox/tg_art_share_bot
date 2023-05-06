@@ -196,6 +196,14 @@ class Image(models.Model):
                 .order_by('-taste_similarity', 'score_count', '?')[:15]:
             return list(image_ids)
 
+    @classmethod
+    def list_reported_photos(cls, tg_id):
+        return cls.objects.filter(profile__tg_id=tg_id, datetime__gte=datetime_now().replace(month=1, day=1))\
+            .values('file_unique_id')\
+            .annotate(report_count=Count("report"))\
+            .filter(report_count__gte=1)\
+            .order_by('-report_count', '-datetime')[:10]
+
     class Meta:
         verbose_name = "Изображение"
         verbose_name_plural = "Изображения"
@@ -255,10 +263,10 @@ class Report(models.Model):
         return cls.objects.filter(
             image__profile__tg_id=tg_id,
             image__datetime__gte=ct.replace(day=1, hour=0, minute=0, second=0, microsecond=0),
-        ).values('image__profile').distinct().count() >= 3 or cls.objects.filter(
+        ).values('image__profile').distinct().count() >= 5 or cls.objects.filter(
             image__profile__tg_id=tg_id,
             image__datetime__gte=ct.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0),
-        ).values('image__profile').distinct().count() >= 10
+        ).values('image__profile').distinct().count() >= 25
 
     def scheme_image_tag(self):
         return mark_safe('<img src = "data: image/jpeg; base64, {}" width="300">'.format(
