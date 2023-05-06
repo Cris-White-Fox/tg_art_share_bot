@@ -15,6 +15,7 @@ from tgbot.models import Image, ImageScore, Profile
 
 TIMERS = {}
 IMAGES_CACHE = {}
+SCORE_RESULTS = {}
 
 
 def timers_view():
@@ -24,6 +25,20 @@ def timers_view():
             "mean_time": sum(timer)/len(timer),
             "worst 10": [round(t, 3) for t in sorted(timer, reverse=True)[:10]],
         } for func_name, timer in TIMERS.items()
+    }
+
+
+def score_results_view():
+    return {
+        uid: {
+            taste_similarity: {
+                "count": len(results),
+                "likes": len([r for r in results if r > 0]),
+                "dislikes": len([r for r in results if r < 0]),
+            }
+            for taste_similarity, results in user_results.items()
+        }
+        for uid, user_results in SCORE_RESULTS.items()
     }
 
 
@@ -170,14 +185,14 @@ def save_photo(message: Message):
     )
 
 
-def send_photo_with_default_markup(chat_id, file_unique_id):
+def send_photo_with_default_markup(chat_id, photo):
     markup = quick_markup({
-        "🚫": {'callback_data': f'dislike|{file_unique_id}'},
-        "❤️": {'callback_data': f'like|{file_unique_id}'},
+        "🚫": {'callback_data': f'dislike|{photo["file_unique_id"]}|{photo["taste_similarity"]}'},
+        "❤️": {'callback_data': f'like|{photo["file_unique_id"]}|{photo["taste_similarity"]}'},
     })
     bot.send_photo(
         chat_id=chat_id,
-        photo=Image.objects.get(file_unique_id=file_unique_id).file_id,
+        photo=Image.objects.get(file_unique_id=photo["file_unique_id"]).file_id,
         reply_markup=markup
     )
 
@@ -223,13 +238,15 @@ def delete_photo(callback: CallbackQuery):
 )
 @timeit
 def score_photo(callback: CallbackQuery):
-    action, unique_id = callback.data.split('|')
+    action, unique_id, taste_similarity = callback.data.split('|')
     if action == 'dislike':
         score = -1
         global IMAGES_CACHE
         IMAGES_CACHE[callback.from_user.id] = []
     else:
         score = 1
+    global SCORE_RESULTS
+    SCORE_RESULTS.setdefault(callback.from_user.id, {}).setdefault(taste_similarity, []).append(score)
     try:
         ImageScore.new_score(
             tg_id=callback.from_user.id,

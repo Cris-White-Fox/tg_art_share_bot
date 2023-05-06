@@ -86,7 +86,7 @@ class Profile(models.Model):
                     models.F("count") * models.F("taste_sim") * models.F("taste_sim"),
                     output_field=models.FloatField(),
                 )
-            ).filter(taste_sim__gte=0, count__gte=10).order_by('-order_sim')[:15]
+            ).filter(taste_sim__gte=0, count__gte=10).order_by('-order_sim')[:50]
         return profiles
 
     class Meta:
@@ -148,7 +148,10 @@ class Image(models.Model):
                     .exclude(image_score__profile__tg_id=tg_id)\
                     .order_by('?')\
                     .values_list('file_unique_id', flat=True)[:15]):
-                return file_unique_ids
+                return [{
+                    "file_unique_id": fud,
+                    "taste_similarity": 0,
+                } for fud in file_unique_ids]
 
     @classmethod
     def get_likes(cls, tg_id):
@@ -168,7 +171,7 @@ class Image(models.Model):
             image__image_score__score__lte=0,
             image__image_score__datetime__gte=datetime_now() - datetime.timedelta(minutes=15)
         )
-        if image_ids := list(cls.objects\
+        if image_ids := cls.objects\
                 .exclude(image_score__profile__tg_id=tg_id)\
                 .exclude(profile__in=disliked_profiles)\
                 .values('file_unique_id')\
@@ -178,8 +181,8 @@ class Image(models.Model):
                         filter=Q(image_score__profile__tg_id__in=profiles.values('tg_id'))
                     ),
                     score_count=Count("image_score")
-                ).order_by('-taste_similarity', 'score_count', '?').values_list('file_unique_id', flat=True)[:15]):
-            return image_ids
+                ).order_by('-taste_similarity', 'score_count', '?')[:15]:
+            return list(image_ids)
 
     class Meta:
         verbose_name = "Изображение"
