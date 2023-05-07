@@ -271,9 +271,11 @@ class Report(models.Model):
     def check_reported(cls, tg_id):
         ct = datetime_now().replace(second=0, microsecond=0)
         return cls.objects.filter(
+            image__block__isnull=True,
             image__profile__tg_id=tg_id,
             image__datetime__gte=ct.replace(day=1, hour=0, minute=0, second=0, microsecond=0),
         ).values('image__profile').distinct().count() >= 5 or cls.objects.filter(
+            image__block__isnull=True,
             image__profile__tg_id=tg_id,
             image__datetime__gte=ct.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0),
         ).values('image__profile').distinct().count() >= 25
