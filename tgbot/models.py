@@ -281,16 +281,23 @@ class Report(models.Model):
         ).values('image__profile').distinct().count() >= 25
 
     def scheme_image_tag(self):
-        return mark_safe('<img src = "data: image/jpeg; base64, {}" width="300">'.format(
+        return mark_safe('<img src = "data: image/jpeg; base64, {}" width="200">'.format(
             b64encode(self.image_file).decode('utf8')
         ))
 
     scheme_image_tag.short_description = 'Image'
     scheme_image_tag.allow_tags = True
 
+    class Meta:
+        verbose_name = "Жалоба"
+        verbose_name_plural = "Жалобы"
+        unique_together = ['profile', 'image']
+
 
 class ImageBlock(models.Model):
-    image = models.ForeignKey(Image, verbose_name="Изображение", related_name='block', on_delete=models.CASCADE)
+    image = models.OneToOneField(
+        Image, verbose_name="Изображение", related_name='block', on_delete=models.CASCADE
+    )
     datetime = models.DateTimeField(verbose_name="Дата взаимодействия", default=datetime_now)
 
     @classmethod
