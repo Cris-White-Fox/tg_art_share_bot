@@ -231,13 +231,14 @@ def save_photo(message: Message):
 def send_photo_with_default_markup(chat_id, photo):
     markup = quick_markup({
         "❗️": {'callback_data': f'report|{photo["file_unique_id"]}'},
-        "👎": {'callback_data': f'dislike|{photo["file_unique_id"]}|{photo["taste_similarity"]}'},
-        "❤️": {'callback_data': f'like|{photo["file_unique_id"]}|{photo["taste_similarity"]}'},
+        "👎": {'callback_data': f'dislike|{photo["file_unique_id"]}|{photo.get("taste_similarity")}'},
+        "❤️": {'callback_data': f'like|{photo["file_unique_id"]}|{photo.get("taste_similarity")}'},
     }, row_width=3)
     bot.send_photo(
         chat_id=chat_id,
         photo=Image.objects.get(file_unique_id=photo["file_unique_id"]).file_id,
-        reply_markup=markup
+        reply_markup=markup,
+        caption=str(photo.get("taste_similarity") or '🔀')
     )
 
 
@@ -324,7 +325,11 @@ def score_photo(callback: CallbackQuery):
     if action == 'dislike':
         bot.delete_message(callback.message.chat.id, callback.message.id)
     else:
-        bot.edit_message_reply_markup(callback.message.chat.id, callback.message.id)
+        bot.edit_message_caption(
+            caption=None,
+            chat_id=callback.message.chat.id,
+            message_id=callback.message.id
+        )
 
 
 @bot.message_handler(commands=['stat'])
