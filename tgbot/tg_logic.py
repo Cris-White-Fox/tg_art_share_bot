@@ -10,7 +10,7 @@ from telebot.util import quick_markup
 
 from project.settings import bot
 
-from tgbot.models import Image, ImageScore, Profile, Report
+from tgbot.models import Image, ImageScore, Profile, Report, ImageBlock
 
 TIMERS = {}
 IMAGES_CACHE = {}
@@ -123,8 +123,14 @@ response_templates_dict = {
         'default': "Image uploads are limited due to user complaints!\nCheck /reports",
     },
     'reported_photo_list': {
-        'ru': 'Изображения, на которые пожаловались другие пользователи.\nИх можно удалить, чтобы снять ограничения.',
-        'default': "Images that other users have complained about.\nYou can delete them to remove restrictions.",
+        'ru': 'Изображения, на которые пожаловались другие пользователи.\n'
+              'Их можно скрыть, чтобы снять ограничения.',
+        'default': "Images that other users have complained about.\n"
+                   "They can be hidden to remove restrictions.",
+    },
+    'img_blocked': {
+        'ru': 'Изображение заблокировано и не будет появляться в поиске.',
+        'default': "Image blocked and will not appear in search results.",
     },
 }
 
@@ -199,6 +205,14 @@ def save_photo(message: Message):
                 tg_id=message.from_user.id
             ),
         )
+        try:
+            ImageScore.new_score(
+                tg_id=message.from_user.id,
+                file_unique_id=Image.objects.get(phash=phash).file_unique_id,
+                score=2,
+            )
+        except django.db.utils.IntegrityError:
+            pass
         return
     markup = quick_markup({
         'Delete': {'callback_data': 'delete|'+photo.file_unique_id},
@@ -257,6 +271,21 @@ def delete_photo(callback: CallbackQuery):
         callback_query_id=callback.id,
         text=response_text(
             template='img_deleted',
+            tg_id=callback.from_user.id
+        ),
+    )
+    bot.delete_message(callback.message.chat.id, callback.message.id)
+
+
+@bot.callback_query_handler(func=lambda callback: callback.data.startswith('block'))
+@timeit
+def block_photo(callback: CallbackQuery):
+    _, file_unique_id = callback.data.split('|')
+    ImageBlock.block_image(callback.from_user.id, file_unique_id)
+    bot.answer_callback_query(
+        callback_query_id=callback.id,
+        text=response_text(
+            template='img_blocked',
             tg_id=callback.from_user.id
         ),
     )
@@ -409,7 +438,7 @@ def report_photo(callback: CallbackQuery):
 @bot.message_handler(commands=['reports'])
 @update_user
 @timeit
-def my_stat(message: Message) -> None:
+def my_reports(message: Message) -> None:
     bot.send_message(
         chat_id=message.chat.id,
         text=response_text(
@@ -419,7 +448,7 @@ def my_stat(message: Message) -> None:
     )
     for photo in Image.list_reported_photos(message.from_user.id):
         markup = quick_markup({
-            'Delete': {'callback_data': 'delete|' + photo["file_unique_id"]},
+            '🚫': {'callback_data': 'block|' + photo["file_unique_id"]},
         })
         bot.send_photo(
             chat_id=message.chat.id,

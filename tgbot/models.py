@@ -153,11 +153,17 @@ class Image(models.Model):
                 filter=Q(image__image_score__profile__tg_id=tg_id) & Q(image__image_score__score__lte=0))
         ).order_by('last_dislike')[:50]
         for profile in profiles:
-            if file_unique_ids := list(Image.objects\
-                    .filter(profile__tg_id=profile['tg_id'])\
-                    .exclude(image_score__profile__tg_id=tg_id)\
-                    .order_by('?')\
-                    .values_list('file_unique_id', flat=True)[:15]):
+            if file_unique_ids := list(
+                Image.objects
+                    .filter(profile__tg_id=profile['tg_id'])
+                    .filter(block__isnull=True)
+                    .exclude(image_score__profile__tg_id=tg_id)
+                    .values('file_unique_id')
+                    .annotate(report_count=Count("report"))
+                    .filter(report_count__lte=2)
+                    .order_by('?')
+                    .values_list('file_unique_id', flat=True)[:15]
+            ):
                 return [{
                     "file_unique_id": fud,
                     "taste_similarity": 0,
@@ -179,12 +185,14 @@ class Image(models.Model):
         disliked_profiles = Profile.objects.filter(
             image__image_score__profile__tg_id=tg_id,
             image__image_score__score__lte=0,
-            image__image_score__datetime__gte=datetime_now() - datetime.timedelta(minutes=15)
+            image__image_score__datetime__gte=datetime_now() - datetime.timedelta(minutes=30)
         )
-        if image_ids := cls.objects\
-                .exclude(image_score__profile__tg_id=tg_id)\
-                .exclude(profile__in=disliked_profiles)\
-                .values('file_unique_id')\
+        if image_ids := list(
+            cls.objects
+                .exclude(image_score__profile__tg_id=tg_id)
+                .exclude(profile__in=disliked_profiles)
+                .filter(block__isnull=True)
+                .values('file_unique_id')
                 .annotate(
                     taste_similarity=Sum(
                         "image_score__score",
@@ -192,17 +200,19 @@ class Image(models.Model):
                     ),
                     score_count=Count("image_score"),
                     report_count=Count("report"),
-                ).filter(taste_similarity__gte=0, report_count__lte=2)\
-                .order_by('-taste_similarity', 'score_count', '?')[:15]:
-            return list(image_ids)
+                ).filter(taste_similarity__gte=0, report_count__lte=2)
+                .order_by('-taste_similarity', 'score_count', '?')[:15]
+        ):
+            return image_ids
 
     @classmethod
     def list_reported_photos(cls, tg_id):
-        return cls.objects.filter(profile__tg_id=tg_id, datetime__gte=datetime_now().replace(month=1, day=1))\
-            .values('file_unique_id')\
-            .annotate(report_count=Count("report"))\
-            .filter(report_count__gte=1)\
-            .order_by('-report_count', '-datetime')[:10]
+        return cls.objects\
+                   .filter(profile__tg_id=tg_id, datetime__gte=datetime_now().replace(month=1, day=1))\
+                   .values('file_unique_id')\
+                   .filter(report__isnull=False)\
+                   .filter(block__isnull=True)\
+                   .order_by('-datetime')[:10]
 
     class Meta:
         verbose_name = "Изображение"
@@ -275,3 +285,14 @@ class Report(models.Model):
 
     scheme_image_tag.short_description = 'Image'
     scheme_image_tag.allow_tags = True
+
+
+class ImageBlock(models.Model):
+    image = models.ForeignKey(Image, verbose_name="Изображение", related_name='block', on_delete=models.CASCADE)
+    datetime = models.DateTimeField(verbose_name="Дата взаимодействия", default=datetime_now)
+
+    @classmethod
+    def block_image(cls, tg_id, file_unique_id):
+        return cls.objects.create(
+            image=Image.objects.get(file_unique_id=file_unique_id, profile__tg_id=tg_id),
+        )

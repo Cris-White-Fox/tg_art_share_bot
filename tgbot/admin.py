@@ -25,12 +25,13 @@ class ProfileAdmin(admin.ModelAdmin):
             .get_queryset(request)\
             .annotate()\
             .annotate(
-                image__count=models.Count('image', distinct=True),
+                image__count=models.Count('image', distinct=True)
+            ).annotate(
                 likes__count=models.Count(
                     'image_score',
                     distinct=True,
                     filter=Q(image_score__score__gte=1)
-                ) - models.Count('image', distinct=True),
+                ) - models.F('image__count'),
                 dislikes__count=models.Count(
                     'image_score',
                     distinct=True,
@@ -40,7 +41,7 @@ class ProfileAdmin(admin.ModelAdmin):
                     'image__image_score',
                     distinct=True,
                     filter=Q(image__image_score__score__gte=1)
-                ) - models.Count('image', distinct=True),
+                ) - models.F('image__count'),
                 outerdislikes__count=models.Count(
                     'image__image_score',
                     distinct=True,
