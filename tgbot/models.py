@@ -159,9 +159,12 @@ class Image(models.Model):
                     .filter(block__isnull=True)
                     .exclude(image_score__profile__tg_id=tg_id)
                     .values('file_unique_id')
-                    .annotate(report_count=Count("report"))
+                    .annotate(
+                        report_count=Count("report"),
+                        score_count=Count("image_score"),
+                    )
                     .filter(report_count__lte=2)
-                    .order_by('?')
+                    .order_by('score_count', '?')
                     .values_list('file_unique_id', flat=True)[:15]
             ):
                 return [{
