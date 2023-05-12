@@ -1,9 +1,6 @@
 from django.contrib import admin
 from django.db import models
 from django.db.models import Q
-from django.http import HttpResponseRedirect
-
-from project.settings import bot
 from .models import Profile, Image, ImageScore, Report, ImageBlock
 
 
@@ -18,6 +15,7 @@ class ProfileAdmin(admin.ModelAdmin):
         'last_bot_message'
     )
     search_fields = ('tg_id', 'name')
+    list_per_page = 25
 
     def get_queryset(self, request):
         qs = super(ProfileAdmin, self)\
@@ -41,15 +39,17 @@ class ProfileAdmin(admin.ModelAdmin):
 class ImageAdmin(admin.ModelAdmin):
     list_display = (
         'profile',
-        'file_unique_id',
-        'datetime',
         'likes_count',
         'dislikes_count',
+        'scheme_image_tag',
+        'file_unique_id',
+        'datetime',
         'file_id',
         'phash',
     )
+    readonly_fields = ('scheme_image_tag',)
     search_fields = ('profile__name', 'profile__tg_id', 'file_unique_id', 'phash')
-    actions = ["delete_selected", "make_published"]
+    list_per_page = 25
 
     def get_queryset(self, request):
         qs = super(ImageAdmin, self)\
@@ -66,25 +66,26 @@ class ImageAdmin(admin.ModelAdmin):
     def dislikes_count(self, obj):
         return obj.dislikes__count
 
-    @admin.action(description="Get image")
-    def make_published(self, request, queryset):
-        return HttpResponseRedirect(bot.get_file_url(queryset[0].file_id))
-
 
 @admin.register(ImageScore)
 class ImageScoreAdmin(admin.ModelAdmin):
-    list_display = ('profile', 'image', 'score', 'datetime')
+    list_display = ('profile', 'score', 'scheme_image_tag', 'image', 'datetime', )
     list_filter = ('score', )
+    readonly_fields = ('scheme_image_tag',)
     search_fields = ('profile__name', 'profile__tg_id', 'image__file_unique_id', 'image__phash')
+    list_per_page = 25
 
 
 @admin.register(Report)
 class ReportAdmin(admin.ModelAdmin):
-    list_display = ('profile', 'image', 'datetime', 'scheme_image_tag')
+    list_display = ('profile', 'image', 'scheme_image_tag', 'datetime',)
     search_fields = ('profile__name', 'profile__tg_id', 'image__file_unique_id', 'image__phash')
     readonly_fields = ('scheme_image_tag',)
+    list_per_page = 25
 
 
 @admin.register(ImageBlock)
 class ImageBlockAdmin(admin.ModelAdmin):
-    list_display = ('image', 'datetime')
+    list_display = ('image', 'datetime', 'scheme_image_tag')
+    readonly_fields = ('scheme_image_tag',)
+    list_per_page = 25

@@ -1,11 +1,12 @@
 import datetime
-from base64 import b64encode
 
 from django.db.models.functions import Cast
 from django.utils import timezone
 from django.db import models
-from django.db.models import Max, Sum, Q, Count, Value
+from django.db.models import Max, Sum, Q, Count
 from django.utils.safestring import mark_safe
+
+from project.settings import bot
 
 
 def datetime_now():
@@ -125,6 +126,14 @@ class Image(models.Model):
     file_unique_id = models.TextField(verbose_name="Уникальный идентификатор изображения", unique=True)
     phash = models.TextField(verbose_name="Хэш изображения", unique=True)
     datetime = models.DateTimeField(verbose_name="Дата добавления", default=datetime_now)
+
+    def scheme_image_tag(self):
+        return mark_safe('<img src = "{}" width="300">'.format(
+            bot.get_file_url(self.file_id)
+        ))
+
+    scheme_image_tag.short_description = 'image_view'
+    scheme_image_tag.allow_tags = True
 
     @classmethod
     def check_limit(cls, tg_id):
@@ -255,6 +264,14 @@ class ImageScore(models.Model):
     score = models.IntegerField(verbose_name="Результат взаимодействия")
     datetime = models.DateTimeField(verbose_name="Дата взаимодействия", default=datetime_now)
 
+    def scheme_image_tag(self):
+        return mark_safe('<img src = "{}" width="300">'.format(
+            bot.get_file_url(self.image.file_id)
+        ))
+
+    scheme_image_tag.short_description = 'image_view'
+    scheme_image_tag.allow_tags = True
+
     @classmethod
     def new_score(cls, tg_id, file_unique_id, score):
         return cls.objects.create(
@@ -276,7 +293,14 @@ class Report(models.Model):
     profile = models.ForeignKey(Profile, verbose_name="Пользователь", related_name='report', on_delete=models.CASCADE)
     image = models.ForeignKey(Image, verbose_name="Изображение", related_name='report', on_delete=models.CASCADE)
     datetime = models.DateTimeField(verbose_name="Дата взаимодействия", default=datetime_now)
-    image_file = models.BinaryField(verbose_name="Дата взаимодействия", blank=True)
+
+    def scheme_image_tag(self):
+        return mark_safe('<img src = "{}" width="300">'.format(
+            bot.get_file_url(self.image.file_id)
+        ))
+
+    scheme_image_tag.short_description = 'image_view'
+    scheme_image_tag.allow_tags = True
 
     @classmethod
     def check_limit(cls, tg_id):
@@ -287,33 +311,24 @@ class Report(models.Model):
         ).count() >= 15
 
     @classmethod
-    def new_report(cls, tg_id, file_unique_id, image_file):
+    def new_report(cls, tg_id, file_unique_id):
         return cls.objects.create(
             profile=Profile.objects.get(tg_id=tg_id),
             image=Image.objects.get(file_unique_id=file_unique_id),
-            image_file=image_file,
         )
 
     @classmethod
     def check_reported(cls, tg_id):
-        ct = datetime_now().replace(second=0, microsecond=0)
+        ct = datetime_now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         return cls.objects.filter(
             image__block__isnull=True,
             image__profile__tg_id=tg_id,
-            image__datetime__gte=ct.replace(day=1, hour=0, minute=0, second=0, microsecond=0),
-        ).values('image__profile').distinct().count() >= 5 or cls.objects.filter(
+            image__datetime__gte=ct,
+        ).values('image__profile').distinct().count() >= 3 or cls.objects.filter(
             image__block__isnull=True,
             image__profile__tg_id=tg_id,
-            image__datetime__gte=ct.replace(month=1, day=1, hour=0, minute=0, second=0, microsecond=0),
-        ).values('image__profile').distinct().count() >= 25
-
-    def scheme_image_tag(self):
-        return mark_safe('<img src = "data: image/jpeg; base64, {}" width="200">'.format(
-            b64encode(self.image_file).decode('utf8')
-        ))
-
-    scheme_image_tag.short_description = 'Image'
-    scheme_image_tag.allow_tags = True
+            image__datetime__gte=ct.replace(month=1),
+        ).values('image__profile').distinct().count() >= 10
 
     class Meta:
         verbose_name = "Жалоба"
@@ -326,6 +341,14 @@ class ImageBlock(models.Model):
         Image, verbose_name="Изображение", related_name='block', on_delete=models.CASCADE
     )
     datetime = models.DateTimeField(verbose_name="Дата взаимодействия", default=datetime_now)
+
+    def scheme_image_tag(self):
+        return mark_safe('<img src = "{}" width="300">'.format(
+            bot.get_file_url(self.image.file_id)
+        ))
+
+    scheme_image_tag.short_description = 'image_view'
+    scheme_image_tag.allow_tags = True
 
     @classmethod
     def block_image(cls, tg_id, file_unique_id):

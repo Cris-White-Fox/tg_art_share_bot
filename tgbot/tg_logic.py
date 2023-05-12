@@ -373,14 +373,6 @@ def confirm_report(callback: CallbackQuery):
         )
         return
 
-    file_info = bot.get_file(Image.objects.get(file_unique_id=unique_id).file_id)
-    file_bytes = bot.download_file(file_info.file_path)
-    buffered = io.BytesIO()
-    image = PILImage.open(io.BytesIO(file_bytes))
-    image.thumbnail((300, 300))
-    image.save(buffered, format="JPEG", quality=60)
-    file_bytes = buffered.getvalue()
-
     score = -2
     try:
         ImageScore.new_score(
@@ -395,7 +387,6 @@ def confirm_report(callback: CallbackQuery):
         Report.new_report(
             tg_id=callback.from_user.id,
             file_unique_id=unique_id,
-            image_file=file_bytes,
         )
     except django.db.utils.IntegrityError:
         pass
