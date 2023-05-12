@@ -94,13 +94,13 @@ response_templates_dict = {
     },
     'stat': {
         'ru':
-            'Загружено изображений: {uploaded_images}\n'
-            'Лайки от тебя: {likes_from}\n'
-            'Лайки для тебя: {likes_to}',
+            'Загружено изображений: {uploaded_images} (больше чем {uploaded_images_position}% других пользователей)\n'
+            'Поставлено оценок: {scores_from} (больше чем {score_images_position}% других пользователей)\n'
+            'Люди с похожими вкусами: {similar_profiles}',
         'default':
-            'Images uploaded: {uploaded_images}\n'
-            'Likes from you: {likes_from}\n'
-            'Likes to you: {likes_to}',
+            'Images uploaded: {uploaded_images}  (it\'s more then {uploaded_images_position}% of other users)\n'
+            'Images scored: {scores_from} (it\'s more then {score_images_position}% of other users)\n'
+            'Have similar taste: {similar_profiles}'
     },
     'img_notification': {
         'ru': 'Для тебя нашлось несколько новых изображений, надеюсь тебе они понравятся!',
@@ -336,7 +336,7 @@ def score_photo(callback: CallbackQuery):
 @update_user
 @timeit
 def my_stat(message: Message) -> None:
-    uploaded_images, likes_from, likes_to = Profile.user_stat(message.from_user.id)
+    uploaded_images, uploaded_images_position, scores_from, score_images_position, similar_profiles = Profile.user_stat(message.from_user.id)
     bot.send_message(
         chat_id=message.chat.id,
         text=response_text(
@@ -344,8 +344,10 @@ def my_stat(message: Message) -> None:
             tg_id=message.from_user.id
         ).format(
             uploaded_images=uploaded_images,
-            likes_from=likes_from,
-            likes_to=likes_to
+            uploaded_images_position=uploaded_images_position + 1,
+            scores_from=scores_from,
+            score_images_position=score_images_position + 1,
+            similar_profiles=similar_profiles,
         ),
     )
 

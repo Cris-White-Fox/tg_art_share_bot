@@ -1,7 +1,9 @@
 from django.contrib import admin
 from django.db import models
 from django.db.models import Q
+from django.http import HttpResponseRedirect
 
+from project.settings import bot
 from .models import Profile, Image, ImageScore, Report, ImageBlock
 
 
@@ -11,10 +13,7 @@ class ProfileAdmin(admin.ModelAdmin):
         'tg_id',
         'name',
         'images_uploaded',
-        'likes_count',
-        'dislikes_count',
-        'outerlikes_count',
-        'outerdislikes_count',
+        'scores_from',
         'last_activity',
         'last_bot_message'
     )
@@ -23,30 +22,9 @@ class ProfileAdmin(admin.ModelAdmin):
     def get_queryset(self, request):
         qs = super(ProfileAdmin, self)\
             .get_queryset(request)\
-            .annotate()\
             .annotate(
-                image__count=models.Count('image', distinct=True)
-            ).annotate(
-                likes__count=models.Count(
-                    'image_score',
-                    distinct=True,
-                    filter=Q(image_score__score__gte=1)
-                ) - models.F('image__count'),
-                dislikes__count=models.Count(
-                    'image_score',
-                    distinct=True,
-                    filter=Q(image_score__score__lte=0)
-                ),
-                outerlikes__count=models.Count(
-                    'image__image_score',
-                    distinct=True,
-                    filter=Q(image__image_score__score__gte=1)
-                ) - models.F('image__count'),
-                outerdislikes__count=models.Count(
-                    'image__image_score',
-                    distinct=True,
-                    filter=Q(image__image_score__score__lte=0)
-                ),
+                image__count=models.Count('image', distinct=True),
+                scores_from=models.Count('image_score', distinct=True) - models.F('image__count'),
             )
         return qs
 
@@ -54,21 +32,9 @@ class ProfileAdmin(admin.ModelAdmin):
     def images_uploaded(self, obj):
         return obj.image__count
 
-    @admin.display(ordering="likes__count", description='Лайки от')
-    def likes_count(self, obj):
-        return obj.likes__count
-
-    @admin.display(ordering="dislikes__count", description='Дизлайки от')
-    def dislikes_count(self, obj):
-        return obj.dislikes__count
-
-    @admin.display(ordering="outerlikes__count", description='Лайки для')
-    def outerlikes_count(self, obj):
-        return obj.outerlikes__count
-
-    @admin.display(ordering="outerdislikes__count", description='Дизлайки для')
-    def outerdislikes_count(self, obj):
-        return obj.outerdislikes__count
+    @admin.display(ordering="scores_from", description='Выставлено оценок')
+    def scores_from(self, obj):
+        return obj.scores_from
 
 
 @admin.register(Image)
@@ -83,6 +49,7 @@ class ImageAdmin(admin.ModelAdmin):
         'phash',
     )
     search_fields = ('profile__name', 'profile__tg_id', 'file_unique_id', 'phash')
+    actions = ["delete_selected", "make_published"]
 
     def get_queryset(self, request):
         qs = super(ImageAdmin, self)\
@@ -98,6 +65,10 @@ class ImageAdmin(admin.ModelAdmin):
     @admin.display(ordering="dislikes__count", description='dislikes')
     def dislikes_count(self, obj):
         return obj.dislikes__count
+
+    @admin.action(description="Get image")
+    def make_published(self, request, queryset):
+        return HttpResponseRedirect(bot.get_file_url(queryset[0].file_id))
 
 
 @admin.register(ImageScore)

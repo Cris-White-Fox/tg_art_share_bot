@@ -53,10 +53,30 @@ class Profile(models.Model):
 
     @classmethod
     def user_stat(cls, tg_id):
+        profiles_count = cls.objects.count()
         uploaded_images = cls.objects.get(tg_id=tg_id).image.count()
-        likes_from = ImageScore.objects.exclude(image__profile__tg_id=tg_id).filter(profile__tg_id=tg_id, score=1).count()
-        likes_to = ImageScore.objects.exclude(profile__tg_id=tg_id).filter(image__profile__tg_id=tg_id, score=1).count()
-        return uploaded_images, likes_from, likes_to
+        scores_from = cls.objects.get(tg_id=tg_id).image_score.count()
+        uploaded_images_position = (
+                Image.objects
+                    .exclude(profile__tg_id=tg_id)
+                    .values('profile')
+                    .annotate(count=Count("profile"))
+                    .filter(count__lte=uploaded_images).count()
+                + cls.objects.filter(image__isnull=True).count()
+           ) * 100 // profiles_count
+        score_images_position = (
+                ImageScore.objects
+                    .exclude(profile__tg_id=tg_id)
+                    .values('profile')
+                    .annotate(count=Count("profile"))
+                    .filter(count__lte=scores_from).count()
+                + cls.objects.filter(image_score__isnull=True).count()
+            ) * 100 // profiles_count
+        if similar_profiles := cls.get_similar_profiles(tg_id):
+            similar_profiles_count = similar_profiles.count()
+        else:
+            similar_profiles_count = 0
+        return uploaded_images, uploaded_images_position, scores_from, score_images_position, similar_profiles_count
 
     @classmethod
     def get_similar_profiles(cls, tg_id):
@@ -88,7 +108,7 @@ class Profile(models.Model):
                     models.F("count") * models.F("taste_sim") * models.F("taste_sim"),
                     output_field=models.FloatField(),
                 )
-            ).filter(taste_sim__gte=0, count__gte=10).order_by('-order_sim')[:50]
+            ).filter(taste_sim__gt=0, count__gte=10).order_by('-order_sim')[:1000]
         return profiles
 
     class Meta:
@@ -201,10 +221,14 @@ class Image(models.Model):
                         "image_score__score",
                         filter=Q(image_score__profile__tg_id__in=profiles.values('tg_id'))
                     ),
-                    score_count=Count("image_score"),
+                    score_count=Count(
+                        "image_score",
+                        filter=Q(image_score__profile__tg_id__in=profiles.values('tg_id')),
+                    ),
                     report_count=Count("report"),
-                ).filter(taste_similarity__gte=0, report_count__lte=2)
-                .order_by('-taste_similarity', 'score_count', '?')[:15]
+                    taste_similarity_per_score=models.F("taste_similarity") / models.F("score_count")
+                ).filter(taste_similarity__gt=0, report_count__lte=2)
+                .order_by('-taste_similarity_per_score', '?')[:15]
         ):
             return image_ids
 
