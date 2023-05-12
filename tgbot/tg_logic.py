@@ -65,10 +65,10 @@ def timeit(func):
 
 response_templates_dict = {
     'help': {
-        'ru': "Хей, пришли мне арт, которым хочешь поделиться и я найду того, кому он понравится!\n"
-              "Либо иcпользуй команду /image",
-        'default': "Hey, send me the art you want to share and I'll find someone who likes it!\n"
-                   "Or use /image",
+        'ru': "Хей, пришли мне свои любимые арты, а я найду тех, кому они тоже понравятся!\n"
+              "Либо иcпользуй команду /image, чтобы посмотреть чужие арты",
+        'default': "Hey, send me your favorite arts and I'll find people who like it too!\n"
+                   "Or use the /image command to see other people's arts",
     },
     'img_saved': {
         'ru': "Изображение сохранено!",
