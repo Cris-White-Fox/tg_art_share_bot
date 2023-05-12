@@ -428,7 +428,7 @@ def report_photo(callback: CallbackQuery):
     _, unique_id = callback.data.split('|')
     markup = quick_markup({
         "🔙": {'callback_data': f'reject_report|{unique_id}'},
-        "❌": {'callback_data': f'confirm_report|{unique_id}'},
+        "❗️": {'callback_data': f'confirm_report|{unique_id}'},
     })
     bot.answer_callback_query(callback_query_id=callback.id)
     bot.edit_message_caption(
