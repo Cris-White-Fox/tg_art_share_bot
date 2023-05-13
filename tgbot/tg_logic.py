@@ -238,7 +238,7 @@ def send_photo_with_default_markup(chat_id, photo):
         chat_id=chat_id,
         photo=Image.objects.get(file_unique_id=photo["file_unique_id"]).file_id,
         reply_markup=markup,
-        caption=str(photo.get("taste_similarity") or '🔀')
+        caption=f'{round(photo.get("taste_similarity") * 100)}%' if photo.get("taste_similarity") else '🔀'
     )
 
 
