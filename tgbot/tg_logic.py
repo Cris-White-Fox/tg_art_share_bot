@@ -249,10 +249,10 @@ def send_photo(message):
     user_id = message.from_user.id
     global IMAGES_CACHE
     if IMAGES_CACHE.get(user_id):
-        send_photo_with_default_markup(message.chat.id, IMAGES_CACHE[user_id].pop())
+        send_photo_with_default_markup(message.chat.id, IMAGES_CACHE[user_id].pop(0))
     elif file_unique_ids := Image.colab_filter_images(user_id) or Image.random_images(user_id):
         IMAGES_CACHE[user_id] = file_unique_ids
-        send_photo_with_default_markup(message.chat.id, IMAGES_CACHE[user_id].pop())
+        send_photo_with_default_markup(message.chat.id, IMAGES_CACHE[user_id].pop(0))
     else:
         bot.send_message(
             chat_id=message.chat.id,
