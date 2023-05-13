@@ -241,7 +241,7 @@ class Image(models.Model):
                         filter=Q(image_score__profile__tg_id__in=profiles.values('tg_id')),
                     ),
                     report_count=Count("report"),
-                    taste_similarity=models.F("taste_similarity") / models.F("score_count")
+                    taste_similarity=models.F("taste_similarity_abs") / models.F("score_count")
                 ).filter(taste_similarity__gt=0, report_count__lte=2)
                 .order_by('-taste_similarity', '?')[:50]
         ):
