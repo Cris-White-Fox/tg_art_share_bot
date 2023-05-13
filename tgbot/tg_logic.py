@@ -305,8 +305,10 @@ def score_photo(callback: CallbackQuery):
         taste_similarity = 0
     if action == 'dislike':
         score = -1
+        tg_id = callback.from_user.id
         global IMAGES_CACHE
-        IMAGES_CACHE[callback.from_user.id] = []
+        if IMAGES_CACHE.get(tg_id):
+            IMAGES_CACHE[tg_id] = Image.update_image_cache(tg_id, IMAGES_CACHE[tg_id])
     else:
         score = 1
     global SCORE_RESULTS
