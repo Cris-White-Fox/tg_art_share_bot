@@ -226,7 +226,7 @@ class Image(models.Model):
                 .filter(block__isnull=True)
                 .values('file_unique_id')
                 .annotate(
-                    taste_similarity=Sum(
+                    taste_similarity_abs=Sum(
                         models.F("image_score__score"),
                         filter=Q(image_score__profile__tg_id__in=height_tier_profiles.values('tg_id'))
                     ) + Sum(
@@ -241,9 +241,9 @@ class Image(models.Model):
                         filter=Q(image_score__profile__tg_id__in=profiles.values('tg_id')),
                     ),
                     report_count=Count("report"),
-                    taste_similarity_per_score=models.F("taste_similarity") / models.F("score_count")
+                    taste_similarity=models.F("taste_similarity") / models.F("score_count")
                 ).filter(taste_similarity__gt=0, report_count__lte=2)
-                .order_by('-taste_similarity_per_score', '?')[:50]
+                .order_by('-taste_similarity', '?')[:50]
         ):
             return image_ids
 
