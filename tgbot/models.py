@@ -166,36 +166,35 @@ class Image(models.Model):
         cls.objects.get(profile__tg_id=tg_id, file_unique_id=file_unique_id).delete()
 
     @classmethod
-    def random_images(cls, tg_id):
-        profiles = Profile.objects.exclude(tg_id=tg_id).exclude(image__isnull=True).values('tg_id').annotate(
-            image_count=Count(
-                "image",
-                filter=~Q(image__image_score__profile__tg_id=tg_id),
-            ),
-            last_dislike=Max(
-                "image__image_score__datetime",
-                filter=Q(image__image_score__profile__tg_id=tg_id) & Q(image__image_score__score__lte=0)
-            )
-        ).filter(image_count__gte=1).order_by('last_dislike')[:50]
-        for profile in profiles:
-            if file_unique_ids := list(
-                Image.objects
-                    .filter(profile__tg_id=profile['tg_id'])
-                    .filter(block__isnull=True)
-                    .exclude(image_score__profile__tg_id=tg_id)
-                    .values('file_unique_id')
-                    .annotate(
-                        report_count=Count("report"),
-                        score_count=Count("image_score"),
-                    )
-                    .filter(report_count__lte=2)
-                    .order_by('score_count', '?')
-                    .values_list('file_unique_id', flat=True)[:15]
-            ):
-                return [{
-                    "file_unique_id": fud,
-                    "taste_similarity": 0,
-                } for fud in file_unique_ids]
+    def random_images(cls, tg_id, count=10):
+        disliked_profile = ImageScore.objects \
+            .filter(profile__tg_id=tg_id, score__lte=0) \
+            .order_by('-datetime') \
+            .values('image__profile') \
+            .first()['image__profile']
+        images = (
+            Image.objects
+                .filter(block__isnull=True)
+                .exclude(image_score__profile__tg_id=tg_id)
+                .values('file_unique_id')
+                .annotate(
+                    report_count=Count("report"),
+                    score_count=Count("image_score"),
+                )
+                .filter(report_count__lte=2)
+                .order_by('score_count', '?')
+        )
+
+        if file_unique_ids := images.exclude(profile=disliked_profile):
+            return [{
+                "file_unique_id": fud,
+                "taste_similarity": 0,
+            } for fud in file_unique_ids.values_list('file_unique_id', flat=True)[:count]]
+
+        return [{
+            "file_unique_id": fud,
+            "taste_similarity": 0,
+        } for fud in images.values_list('file_unique_id', flat=True)[:count]]
 
     @classmethod
     def get_likes(cls, tg_id):
@@ -210,52 +209,54 @@ class Image(models.Model):
         profiles = Profile.get_similar_profiles(tg_id)
         if not profiles:
             return
-        height_tier_profiles = profiles.filter(taste_sim__gte=0.6)
-        mid_tier_profiles = profiles.filter(taste_sim__lt=0.6, taste_sim__gte=0.2)
-        low_tier_profiles = profiles.filter(taste_sim__lt=0.2)
-        disliked_profiles = Profile.objects.filter(
-            image__image_score__profile__tg_id=tg_id,
-            image__image_score__score__lte=0,
-            image__image_score__datetime__gte=datetime_now() - datetime.timedelta(minutes=15)
+        disliked_profile = (
+            ImageScore.objects
+                .filter(profile__tg_id=tg_id, score__lte=0)
+                .order_by('-datetime')
+                .values('image__profile').first()['image__profile']
         )
-
-        if image_ids := list(
-            cls.objects
-                .exclude(image_score__profile__tg_id=tg_id)
-                .exclude(profile__in=disliked_profiles)
-                .filter(block__isnull=True)
-                .values('file_unique_id')
-                .annotate(
-                    score_count=Count(
-                        "image_score",
-                        filter=Q(image_score__profile__tg_id__in=profiles.values('tg_id')),
-                    ),
-                    report_count=Count("report"),
-                )
-                .filter(score_count__gte=1, report_count__lte=2)
-                .annotate(
-                    taste_similarity_abs=Sum(
-                        models.F("image_score__score"),
-                        filter=Q(image_score__profile__tg_id__in=height_tier_profiles.values('tg_id'))
-                    ) + Sum(
-                        models.F("image_score__score"),
-                        filter=Q(image_score__profile__tg_id__in=mid_tier_profiles.values('tg_id'))
-                    ) * 0.5 + Sum(
-                        models.F("image_score__score"),
-                        filter=Q(image_score__profile__tg_id__in=low_tier_profiles.values('tg_id'))
-                    ) * 0.2,
-                    taste_similarity=models.F("taste_similarity_abs") / models.F("score_count")
-                )
-                .filter(taste_similarity__gt=0)
-                .order_by('-taste_similarity', '?')[:50]
-        ):
-            return image_ids
+        if images := (
+                    cls.objects
+                        .exclude(image_score__profile__tg_id=tg_id)
+                        .exclude(profile=disliked_profile)
+                        .filter(block__isnull=True)
+                        .values('file_unique_id')
+                        .annotate(
+                            score_count=Count(
+                                "image_score",
+                                filter=Q(image_score__profile__tg_id__in=profiles.values('tg_id')),
+                            ),
+                            report_count=Count("report"),
+                        )
+                        .filter(score_count__gte=1, report_count__lte=2)
+                ):
+            height_tier_profiles = profiles.filter(taste_sim__gte=0.6)
+            mid_tier_profiles = profiles.filter(taste_sim__lt=0.6, taste_sim__gte=0.2)
+            low_tier_profiles = profiles.filter(taste_sim__lt=0.2)
+            if image_ids := list(
+                        images.annotate(
+                            taste_similarity_abs=Sum(
+                                models.F("image_score__score"),
+                                filter=Q(image_score__profile__tg_id__in=height_tier_profiles.values('tg_id'))
+                            ) + Sum(
+                                models.F("image_score__score"),
+                                filter=Q(image_score__profile__tg_id__in=mid_tier_profiles.values('tg_id'))
+                            ) * 0.5 + Sum(
+                                models.F("image_score__score"),
+                                filter=Q(image_score__profile__tg_id__in=low_tier_profiles.values('tg_id'))
+                            ) * 0.2,
+                            taste_similarity=models.F("taste_similarity_abs") / models.F("score_count")
+                        )
+                        .filter(taste_similarity__gt=0)
+                        .order_by('-taste_similarity', '?')[:50]
+                    ):
+                return image_ids
 
     @classmethod
     def update_image_cache(cls, tg_id, image_ids: list[dict]):
         file_unique_ids = [iid['file_unique_id'] for iid in image_ids]
-        disliked_profiles = ImageScore.objects.filter(profile__tg_id=tg_id, score__lte=0, datetime__gte=datetime_now() - datetime.timedelta(minutes=15)).values('image__profile').distinct()
-        actual = cls.objects.filter(file_unique_id__in=file_unique_ids).exclude(profile__in=disliked_profiles).values_list('file_unique_id', flat=True)
+        disliked_profile = ImageScore.objects.filter(profile__tg_id=tg_id, score__lte=0).order_by('-datetime').values('image__profile').first()['image__profile']
+        actual = cls.objects.filter(file_unique_id__in=file_unique_ids).exclude(profile=disliked_profile).values_list('file_unique_id', flat=True)
         return [iid for iid in image_ids if iid['file_unique_id'] in actual]
 
     @classmethod

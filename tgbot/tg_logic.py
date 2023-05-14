@@ -14,30 +14,15 @@ from tgbot.models import Image, ImageScore, Profile, Report, ImageBlock
 
 TIMERS = {}
 IMAGES_CACHE = {}
-SCORE_RESULTS = {}
 
 
 def timers_view():
     return {
         func_name: {
             "count": len(timer),
-            "mean_time": sum(timer)/len(timer),
+            "median_time": sorted(timer)[len(timer)//2],
             "worst 10": [round(t, 3) for t in sorted(timer, reverse=True)[:10]],
         } for func_name, timer in TIMERS.items()
-    }
-
-
-def score_results_view():
-    return {
-        uid: {
-            taste_similarity: {
-                "count": len(results),
-                "likes": len([r for r in results if r > 0]),
-                "dislikes": len([r for r in results if r < 0]),
-            }
-            for taste_similarity, results in user_results.items()
-        }
-        for uid, user_results in SCORE_RESULTS.items()
     }
 
 
@@ -298,11 +283,7 @@ def block_photo(callback: CallbackQuery):
 )
 @timeit
 def score_photo(callback: CallbackQuery):
-    if len(callback.data.split('|')) == 3:
-        action, unique_id, taste_similarity = callback.data.split('|')
-    else:
-        action, unique_id = callback.data.split('|')
-        taste_similarity = 0
+    action, unique_id = callback.data.split('|')[:2]
     if action == 'dislike':
         score = -1
         tg_id = callback.from_user.id
@@ -311,8 +292,6 @@ def score_photo(callback: CallbackQuery):
             IMAGES_CACHE[tg_id] = Image.update_image_cache(tg_id, IMAGES_CACHE[tg_id])
     else:
         score = 1
-    global SCORE_RESULTS
-    SCORE_RESULTS.setdefault(callback.from_user.id, {}).setdefault(taste_similarity, []).append(score)
     try:
         ImageScore.new_score(
             tg_id=callback.from_user.id,
