@@ -229,7 +229,7 @@ def manage_queue(*args, **kwargs):
 def add_photo_to_queue(message: Message):
     profile_id = message.from_user.id
 
-    if Report.check_reported(profile_id, time.time() // 3600):
+    if Report.check_reported(profile_id, time.time() // 120):
         bot.reply_to(
             message=message,
             text=response_text(
@@ -270,6 +270,7 @@ def add_photo_to_queue(message: Message):
         response_message.id
     )
     if ImageUploadCache.need_to_upload(time.time()//60):
+        ImageUploadCache.need_to_upload.cache_clear()
         manage_queue()
 
 
@@ -307,6 +308,7 @@ def send_photo(message):
             ),
         )
     if ImageUploadCache.need_to_upload(time.time() // 60):
+        ImageUploadCache.need_to_upload.cache_clear()
         manage_queue()
 
 
