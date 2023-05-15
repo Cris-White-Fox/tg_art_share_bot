@@ -163,19 +163,6 @@ def save_image(image):
         file_info = bot.get_file(image.file_id)
         file_bytes = bot.download_file(file_info.file_path)
         pil_image = PILImage.open(io.BytesIO(file_bytes))
-
-        if pil_image.size[0] * pil_image.size[1] < 350_000:
-            bot.edit_message_text(
-                text=response_text(
-                    template='img_too_small',
-                    tg_id=tg_id
-                ),
-                chat_id=tg_id,
-                message_id=image.response_message_id,
-            )
-            ImageUploadCache.remove_from_queue([image.file_id])
-            return
-
         phash = imagehash.phash(pil_image)
         try:
             Image.new_image(
@@ -252,6 +239,18 @@ def add_photo_to_queue(message: Message):
         )
         return
 
+    photo = message.photo[-1]
+
+    if photo.height * photo.width < 350_000:
+        bot.reply_to(
+            message=message,
+            text=response_text(
+                template='img_too_small',
+                tg_id=profile_id
+            ),
+        )
+        return
+
     markup = quick_markup({
         '❌': {'callback_data': f'remove_from_queue'},
     })
@@ -266,7 +265,7 @@ def add_photo_to_queue(message: Message):
     )
     ImageUploadCache.add_to_queue(
         message.from_user.id,
-        message.photo[-1].file_id,
+        photo.file_id,
         message.id,
         response_message.id
     )
