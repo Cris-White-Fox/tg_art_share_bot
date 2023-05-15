@@ -132,15 +132,15 @@ class Image(models.Model):
         if cls.objects.filter(
                     profile__tg_id=tg_id,
                     datetime__gte=ct - datetime.timedelta(days=ct.weekday(), hours=ct.hour, minutes=ct.minute),
-                ).count() >= 500:
-            day_limit = 150
+                ).count() >= 5000:
+            day_limit = 500
         else:
-            day_limit = 300
+            day_limit = 1500
 
         return cls.objects.filter(
             profile__tg_id=tg_id,
             datetime__gte=ct.replace(minute=ct.minute//10*10),
-        ).count() >= 30 or cls.objects.filter(
+        ).count() >= 50 or cls.objects.filter(
             profile__tg_id=tg_id,
             datetime__gte=ct.replace(hour=0, minute=0),
         ).count() >= day_limit
@@ -373,3 +373,49 @@ class ImageBlock(models.Model):
         return cls.objects.create(
             image=Image.objects.get(file_unique_id=file_unique_id, profile__tg_id=tg_id),
         )
+
+
+class ImageUploadCache(models.Model):
+    profile = models.ForeignKey(
+        Profile,
+        verbose_name="Профиль владельца",
+        on_delete=models.CASCADE,
+        related_name='image_upload_cache'
+    )
+    file_id = models.TextField(verbose_name="Идентификатор изображения", unique=True)
+    image_message_id = models.IntegerField(verbose_name="Идентификатор сообщения пользователя")
+    response_message_id = models.IntegerField(verbose_name="Идентификатор сообщения ответа")
+    datetime = models.DateTimeField(verbose_name="Дата взаимодействия", default=datetime_now)
+
+    def scheme_image_tag(self):
+        return mark_safe('<img src = "{}" width="300">'.format(
+            bot.get_file_url(self.file_id)
+        ))
+
+    scheme_image_tag.short_description = 'image_view'
+    scheme_image_tag.allow_tags = True
+
+    @classmethod
+    def add_to_queue(cls, tg_id, file_id, image_message_id, response_message_id):
+        return cls.objects.create(
+            profile=Profile.objects.get(tg_id=tg_id),
+            file_id=file_id,
+            image_message_id=image_message_id,
+            response_message_id=response_message_id,
+        )
+
+    @classmethod
+    def get_from_queue(cls, count=25, tg_id=None):
+        images = cls.objects
+        if tg_id:
+            images = images.filter(profile__tg_id=tg_id)
+        return images.order_by('datetime')[:count]
+
+    @classmethod
+    def remove_from_queue(cls, file_ids: list):
+        cls.objects.filter(file_id__in=file_ids).delete()
+
+    @classmethod
+    def need_to_upload(cls):
+        return cls.objects.count() > 25 \
+               or cls.objects.filter(datetime__lt=datetime_now() - datetime.timedelta(minutes=1)).exists()

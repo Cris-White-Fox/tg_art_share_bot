@@ -10,7 +10,7 @@ from telebot.util import quick_markup
 
 from project.settings import bot
 
-from tgbot.models import Image, ImageScore, Profile, Report, ImageBlock
+from tgbot.models import Image, ImageScore, Profile, Report, ImageBlock, ImageUploadCache
 
 TIMERS = {}
 IMAGES_CACHE = {}
@@ -117,6 +117,11 @@ response_templates_dict = {
         'ru': 'Изображение заблокировано и не будет появляться в поиске.',
         'default': "Image blocked and will not appear in search results.",
     },
+    'img_in_queue': {
+        'ru': 'Изображение добавлено в очередь загрузки.',
+        'default': "The image has been added to the download queue.",
+    },
+
 }
 
 
@@ -144,10 +149,66 @@ def help_(message):
     )
 
 
+def save_image(image):
+    file_info = bot.get_file(image.file_id)
+    file_bytes = bot.download_file(file_info.file_path)
+    phash = imagehash.phash(PILImage.open(io.BytesIO(file_bytes)))
+
+    tg_id = image.profile.tg_id
+    try:
+        Image.new_image(
+            tg_id=tg_id,
+            file_id=image.file_id,
+            file_unique_id=file_info.file_unique_id,
+            phash=phash,
+        )
+    except django.db.utils.IntegrityError:
+        bot.edit_message_text(
+            text=response_text(
+                template='already_in_db',
+                tg_id=tg_id
+            ),
+            chat_id=tg_id,
+            message_id=image.response_message_id,
+        )
+        try:
+            ImageScore.new_score(
+                tg_id=tg_id,
+                file_unique_id=Image.objects.get(phash=phash).file_unique_id,
+                score=2,
+            )
+        except django.db.utils.IntegrityError:
+            pass
+        return
+    finally:
+        ImageUploadCache.remove_from_queue([image.file_id])
+    markup = quick_markup({
+        'Delete': {'callback_data': 'delete|' + file_info.file_unique_id},
+    })
+
+    bot.edit_message_text(
+        chat_id=tg_id,
+        message_id=image.response_message_id,
+        text=response_text(
+            template='img_saved',
+            tg_id=tg_id
+        ),
+        reply_markup=markup,
+    )
+
+
+@bot.message_handler(commands=['manage_queue'])
+def manage_queue(*args, **kwargs):
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor() as executor:
+        for image in ImageUploadCache.get_from_queue():
+            executor.submit(save_image, image)
+
+
 @bot.message_handler(func=lambda message: True, content_types=['photo'])
 @update_user
 @timeit
-def save_photo(message: Message):
+def add_photo_to_queue(message: Message):
     profile_id = message.from_user.id
     if Report.check_reported(profile_id):
         bot.reply_to(
@@ -159,58 +220,26 @@ def save_photo(message: Message):
         )
         return
 
-    if Image.check_limit(profile_id):
-        bot.reply_to(
-            message=message,
-            text=response_text(
-                template='upload_limit',
-                tg_id=message.from_user.id
-            ),
-        )
-        return
-
-    file_info = bot.get_file(message.photo[1].file_id)
-    file_bytes = bot.download_file(file_info.file_path)
-    phash = imagehash.phash(PILImage.open(io.BytesIO(file_bytes)))
-
-    photo = message.photo[-1]
-
-    try:
-        Image.new_image(
-            tg_id=profile_id,
-            file_id=photo.file_id,
-            file_unique_id=photo.file_unique_id,
-            phash=phash,
-        )
-    except django.db.utils.IntegrityError:
-        bot.reply_to(
-            message=message,
-            text=response_text(
-                template='already_in_db',
-                tg_id=message.from_user.id
-            ),
-        )
-        try:
-            ImageScore.new_score(
-                tg_id=message.from_user.id,
-                file_unique_id=Image.objects.get(phash=phash).file_unique_id,
-                score=2,
-            )
-        except django.db.utils.IntegrityError:
-            pass
-        return
     markup = quick_markup({
-        'Delete': {'callback_data': 'delete|'+photo.file_unique_id},
+        '❌': {'callback_data': f'remove_from_queue'},
     })
 
-    bot.reply_to(
+    response_message = bot.reply_to(
         message=message,
         text=response_text(
-            template='img_saved',
+            template='img_in_queue',
             tg_id=message.from_user.id
         ),
         reply_markup=markup,
     )
+    ImageUploadCache.add_to_queue(
+        message.from_user.id,
+        message.photo[-1].file_id,
+        message.id,
+        response_message.id
+    )
+    if ImageUploadCache.need_to_upload():
+        manage_queue()
 
 
 def send_photo_with_default_markup(chat_id, photo):
@@ -246,6 +275,8 @@ def send_photo(message):
                 tg_id=message.from_user.id
             ),
         )
+    if ImageUploadCache.need_to_upload():
+        manage_queue()
 
 
 @bot.callback_query_handler(func=lambda callback: callback.data.startswith('delete'))
@@ -272,6 +303,21 @@ def block_photo(callback: CallbackQuery):
         callback_query_id=callback.id,
         text=response_text(
             template='img_blocked',
+            tg_id=callback.from_user.id
+        ),
+    )
+    bot.delete_message(callback.message.chat.id, callback.message.id)
+
+
+@bot.callback_query_handler(func=lambda callback: callback.data.startswith('remove_from_queue'))
+@timeit
+def remove_from_queue(callback: CallbackQuery):
+    image = ImageUploadCache.objects.filter(response_message_id=callback.message.id).first()
+    ImageUploadCache.remove_from_queue([image.file_id])
+    bot.answer_callback_query(
+        callback_query_id=callback.id,
+        text=response_text(
+            template='img_deleted',
             tg_id=callback.from_user.id
         ),
     )
