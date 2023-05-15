@@ -121,7 +121,10 @@ response_templates_dict = {
         'ru': 'Изображение добавлено в очередь загрузки.',
         'default': "The image has been added to the download queue.",
     },
-
+    'img_too_small': {
+        'ru': 'Изображение слишком низкого качества!',
+        'default': "The image resolution is too low!",
+    },
 }
 
 
@@ -150,11 +153,23 @@ def help_(message):
 
 
 def save_image(image):
+    tg_id = image.profile.tg_id
     file_info = bot.get_file(image.file_id)
     file_bytes = bot.download_file(file_info.file_path)
-    phash = imagehash.phash(PILImage.open(io.BytesIO(file_bytes)))
+    pil_image = PILImage.open(io.BytesIO(file_bytes))
+    if pil_image.size[0] * pil_image.size[1] < 350_000:
+        bot.edit_message_text(
+            text=response_text(
+                template='img_too_small',
+                tg_id=tg_id
+            ),
+            chat_id=tg_id,
+            message_id=image.response_message_id,
+        )
+        ImageUploadCache.remove_from_queue([image.file_id])
+        return
 
-    tg_id = image.profile.tg_id
+    phash = imagehash.phash(pil_image)
     try:
         Image.new_image(
             tg_id=tg_id,
