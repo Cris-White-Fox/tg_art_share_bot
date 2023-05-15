@@ -1,9 +1,10 @@
 import datetime
+from functools import lru_cache
 
 from django.db.models.functions import Cast
 from django.utils import timezone
 from django.db import models
-from django.db.models import Max, Sum, Q, Count
+from django.db.models import Sum, Q, Count
 from django.utils.safestring import mark_safe
 
 from project.settings import bot
@@ -118,10 +119,14 @@ class Image(models.Model):
     phash = models.TextField(verbose_name="Хэш изображения", unique=True)
     datetime = models.DateTimeField(verbose_name="Дата добавления", default=datetime_now)
 
+    @lru_cache
     def scheme_image_tag(self):
-        return mark_safe('<img src = "{}" width="300">'.format(
-            bot.get_file_url(self.file_id)
-        ))
+        try:
+            return mark_safe('<img src = "{}" width="300">'.format(
+                bot.get_file_url(self.file_id)
+            ))
+        except:
+            return mark_safe('<img src = "" width="300">')
 
     scheme_image_tag.short_description = 'image_view'
     scheme_image_tag.allow_tags = True
@@ -282,10 +287,14 @@ class ImageScore(models.Model):
     score = models.IntegerField(verbose_name="Результат взаимодействия")
     datetime = models.DateTimeField(verbose_name="Дата взаимодействия", default=datetime_now)
 
+    @lru_cache
     def scheme_image_tag(self):
-        return mark_safe('<img src = "{}" width="300">'.format(
-            bot.get_file_url(self.image.file_id)
-        ))
+        try:
+            return mark_safe('<img src = "{}" width="300">'.format(
+                bot.get_file_url(self.image.file_id)
+            ))
+        except:
+            return mark_safe('<img src = "" width="300">')
 
     scheme_image_tag.short_description = 'image_view'
     scheme_image_tag.allow_tags = True
@@ -312,10 +321,14 @@ class Report(models.Model):
     image = models.ForeignKey(Image, verbose_name="Изображение", related_name='report', on_delete=models.CASCADE)
     datetime = models.DateTimeField(verbose_name="Дата взаимодействия", default=datetime_now)
 
+    @lru_cache
     def scheme_image_tag(self):
-        return mark_safe('<img src = "{}" width="300">'.format(
-            bot.get_file_url(self.image.file_id)
-        ))
+        try:
+            return mark_safe('<img src = "{}" width="300">'.format(
+                bot.get_file_url(self.image.file_id)
+            ))
+        except:
+            return mark_safe('<img src = "" width="300">')
 
     scheme_image_tag.short_description = 'image_view'
     scheme_image_tag.allow_tags = True
@@ -336,7 +349,8 @@ class Report(models.Model):
         )
 
     @classmethod
-    def check_reported(cls, tg_id):
+    @lru_cache
+    def check_reported(cls, tg_id, cache_ttl=None):
         ct = datetime_now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         return cls.objects.filter(
             image__block__isnull=True,
@@ -387,10 +401,14 @@ class ImageUploadCache(models.Model):
     response_message_id = models.IntegerField(verbose_name="Идентификатор сообщения ответа")
     datetime = models.DateTimeField(verbose_name="Дата взаимодействия", default=datetime_now)
 
+    @lru_cache
     def scheme_image_tag(self):
-        return mark_safe('<img src = "{}" width="300">'.format(
-            bot.get_file_url(self.file_id)
-        ))
+        try:
+            return mark_safe('<img src = "{}" width="300">'.format(
+                bot.get_file_url(self.file_id)
+            ))
+        except:
+            return mark_safe('<img src = "" width="300">')
 
     scheme_image_tag.short_description = 'image_view'
     scheme_image_tag.allow_tags = True
@@ -416,6 +434,7 @@ class ImageUploadCache(models.Model):
         cls.objects.filter(file_id__in=file_ids).delete()
 
     @classmethod
-    def need_to_upload(cls):
+    @lru_cache
+    def need_to_upload(cls, cache_ttl=None):
         return cls.objects.count() > 25 \
                or cls.objects.filter(datetime__lt=datetime_now() - datetime.timedelta(minutes=1)).exists()
