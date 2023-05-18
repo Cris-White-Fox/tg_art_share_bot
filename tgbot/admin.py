@@ -17,22 +17,22 @@ class ProfileAdmin(admin.ModelAdmin):
     search_fields = ('tg_id', 'name')
     list_per_page = 25
 
-    def get_queryset(self, request):
-        qs = super(ProfileAdmin, self)\
-            .get_queryset(request)\
-            .annotate(
-                image__count=models.Count('image', distinct=True),
-                scores_from=models.Count('image_score', distinct=True) - models.F('image__count'),
-            )
-        return qs
+    # def get_queryset(self, request):
+    #     qs = super(ProfileAdmin, self)\
+    #         .get_queryset(request)\
+    #         .annotate(
+    #             image__count=models.Count('image', distinct=True),
+    #             scores_from=models.Count('image_score', distinct=True) - models.F('image__count'),
+    #         )
+    #     return qs
 
-    @admin.display(ordering="image__count", description='Загружено изображений')
+    @admin.display(description='Загружено изображений')
     def images_uploaded(self, obj):
-        return obj.image__count
+        return obj.image.count()
 
-    @admin.display(ordering="scores_from", description='Выставлено оценок')
+    @admin.display(description='Выставлено оценок')
     def scores_from(self, obj):
-        return obj.scores_from
+        return obj.image_score.count()
 
 
 @admin.register(Image)

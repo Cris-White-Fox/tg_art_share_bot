@@ -284,7 +284,7 @@ def send_photo_with_default_markup(chat_id, photo):
         chat_id=chat_id,
         photo=Image.objects.get(file_unique_id=photo["file_unique_id"]).file_id,
         reply_markup=markup,
-        caption=f'{round(photo.get("taste_similarity") * 100)}%' if photo.get("taste_similarity") else '🔀'
+        caption=f'{round(photo.get("taste_similarity") * 100)}%' if photo.get("taste_similarity") > 0 else '🔀'
     )
 
 
@@ -296,7 +296,7 @@ def send_photo(message):
     global IMAGES_CACHE
     if IMAGES_CACHE.get(user_id):
         send_photo_with_default_markup(message.chat.id, IMAGES_CACHE[user_id].pop(0))
-    elif file_unique_ids := Image.colab_filter_images(user_id) or Image.random_images(user_id):
+    elif file_unique_ids := Image.colab_filter_images(user_id):
         IMAGES_CACHE[user_id] = file_unique_ids
         send_photo_with_default_markup(message.chat.id, IMAGES_CACHE[user_id].pop(0))
     else:
