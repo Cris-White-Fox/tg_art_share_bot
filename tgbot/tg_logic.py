@@ -157,84 +157,18 @@ def help_(message):
     )
 
 
-def save_image(image):
-    tg_id = image.profile.tg_id
-    try:
-        file_info = bot.get_file(image.file_id)
-        file_bytes = bot.download_file(file_info.file_path)
-        pil_image = PILImage.open(io.BytesIO(file_bytes))
-        phash = imagehash.phash(pil_image)
-        try:
-            Image.new_image(
-                tg_id=tg_id,
-                file_id=image.file_id,
-                file_unique_id=file_info.file_unique_id,
-                phash=phash,
-            )
-        except django.db.utils.IntegrityError:
-            bot.edit_message_text(
-                text=response_text(
-                    template='already_in_db',
-                    tg_id=tg_id
-                ),
-                chat_id=tg_id,
-                message_id=image.response_message_id,
-            )
-            try:
-                ImageScore.new_score(
-                    tg_id=tg_id,
-                    file_unique_id=Image.objects.get(phash=phash).file_unique_id,
-                    score=2,
-                )
-            except django.db.utils.IntegrityError:
-                pass
-            return
-        finally:
-            ImageUploadCache.remove_from_queue([image.file_id])
-        markup = quick_markup({
-            'Delete': {'callback_data': 'delete|' + file_info.file_unique_id},
-        })
-
-        bot.edit_message_text(
-            chat_id=tg_id,
-            message_id=image.response_message_id,
-            text=response_text(
-                template='img_saved',
-                tg_id=tg_id
-            ),
-            reply_markup=markup,
-        )
-    except:
-        ImageUploadCache.remove_from_queue([image.file_id])
-        bot.send_message(
-            chat_id=tg_id,
-            text=response_text(
-                template='default_error',
-                tg_id=tg_id
-            ),
-            reply_to_message_id=image.message_id
-        )
-
-
-@bot.message_handler(commands=['manage_queue'])
-def manage_queue(*args, **kwargs):
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        for image in ImageUploadCache.get_from_queue():
-            executor.submit(save_image, image)
-
-
 @bot.message_handler(func=lambda message: True, content_types=['photo'])
 @update_user
 @timeit
-def add_photo_to_queue(message: Message):
-    profile_id = message.from_user.id
+def save_photo(message: Message):
+    tg_id = message.from_user.id
 
-    if Report.check_reported(profile_id, time.time() // 120):
+    if Report.check_reported(tg_id, time.time() // 120):
         bot.reply_to(
             message=message,
             text=response_text(
                 template='report_limit',
-                tg_id=message.from_user.id
+                tg_id=tg_id
             ),
         )
         return
@@ -246,32 +180,62 @@ def add_photo_to_queue(message: Message):
             message=message,
             text=response_text(
                 template='img_too_small',
-                tg_id=profile_id
+                tg_id=tg_id
             ),
         )
         return
 
-    markup = quick_markup({
-        '❌': {'callback_data': f'remove_from_queue'},
-    })
 
-    response_message = bot.reply_to(
-        message=message,
-        text=response_text(
-            template='img_in_queue',
-            tg_id=message.from_user.id
-        ),
-        reply_markup=markup,
-    )
-    ImageUploadCache.add_to_queue(
-        message.from_user.id,
-        photo.file_id,
-        message.id,
-        response_message.id
-    )
-    if ImageUploadCache.need_to_upload(time.time()//60):
-        ImageUploadCache.need_to_upload.cache_clear()
-        manage_queue()
+    try:
+        file_info = bot.get_file(photo.file_id)
+        file_bytes = bot.download_file(file_info.file_path)
+        pil_image = PILImage.open(io.BytesIO(file_bytes))
+        phash = imagehash.phash(pil_image)
+        try:
+            Image.new_image(
+                tg_id=tg_id,
+                file_id=photo.file_id,
+                file_unique_id=file_info.file_unique_id,
+                phash=phash,
+            )
+        except django.db.utils.IntegrityError:
+            bot.reply_to(
+                message=message,
+                text=response_text(
+                    template='already_in_db',
+                    tg_id=tg_id
+                ),
+            )
+            try:
+                ImageScore.new_score(
+                    tg_id=tg_id,
+                    file_unique_id=Image.objects.get(phash=phash).file_unique_id,
+                    score=2,
+                )
+            except django.db.utils.IntegrityError:
+                pass
+            return
+
+        markup = quick_markup({
+            'Delete': {'callback_data': 'delete|' + file_info.file_unique_id},
+        })
+
+        bot.reply_to(
+            message=message,
+            text=response_text(
+                template='img_saved',
+                tg_id=tg_id
+            ),
+            reply_markup=markup,
+        )
+    except:
+        bot.reply_to(
+            message=message,
+            text=response_text(
+                template='default_error',
+                tg_id=tg_id
+            ),
+        )
 
 
 def send_photo_with_default_markup(chat_id, photo):
