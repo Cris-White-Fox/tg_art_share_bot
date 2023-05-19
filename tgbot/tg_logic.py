@@ -2,19 +2,24 @@ import django
 import io
 import logging
 import time
-import concurrent.futures
+import traceback
+from threading import Lock
+from contextlib import suppress
 
 import imagehash
 from PIL import Image as PILImage
 from telebot.types import Message, CallbackQuery
 from telebot.util import quick_markup
+from telebot.apihelper import ApiTelegramException
 
 from project.settings import bot
 
-from tgbot.models import Image, ImageScore, Profile, Report, ImageBlock, ImageUploadCache
+from tgbot.models import Image, ImageScore, Profile, Report, ImageBlock
 
 TIMERS = {}
 IMAGES_CACHE = {}
+DB_LOCK = Lock()
+
 
 
 def timers_view():
@@ -30,7 +35,8 @@ def timers_view():
 def update_user(func):
     def inner(message: Message):
         logging.debug(message)
-        Profile.update_profile(message.from_user.id, message.from_user.full_name, message.from_user.language_code)
+        with DB_LOCK:
+            Profile.update_profile(message.from_user.id, message.from_user.full_name, message.from_user.language_code)
         return func(message)
     return inner
 
@@ -163,7 +169,9 @@ def help_(message):
 def save_photo(message: Message):
     tg_id = message.from_user.id
 
-    if Report.check_reported(tg_id, time.time() // 120):
+    with DB_LOCK:
+        reported = Report.check_reported(tg_id, time.time() // 120)
+    if reported:
         bot.reply_to(
             message=message,
             text=response_text(
@@ -192,12 +200,13 @@ def save_photo(message: Message):
         pil_image = PILImage.open(io.BytesIO(file_bytes))
         phash = imagehash.phash(pil_image)
         try:
-            Image.new_image(
-                tg_id=tg_id,
-                file_id=photo.file_id,
-                file_unique_id=file_info.file_unique_id,
-                phash=phash,
-            )
+            with DB_LOCK:
+                Image.new_image(
+                    tg_id=tg_id,
+                    file_id=photo.file_id,
+                    file_unique_id=file_info.file_unique_id,
+                    phash=phash,
+                )
         except django.db.utils.IntegrityError:
             bot.reply_to(
                 message=message,
@@ -206,14 +215,12 @@ def save_photo(message: Message):
                     tg_id=tg_id
                 ),
             )
-            try:
+            with suppress(django.db.utils.IntegrityError), DB_LOCK:
                 ImageScore.new_score(
                     tg_id=tg_id,
                     file_unique_id=Image.objects.get(phash=phash).file_unique_id,
                     score=2,
                 )
-            except django.db.utils.IntegrityError:
-                pass
             return
 
         markup = quick_markup({
@@ -228,7 +235,8 @@ def save_photo(message: Message):
             ),
             reply_markup=markup,
         )
-    except:
+    except Exception as e:
+        logging.error(traceback.format_exc())
         bot.reply_to(
             message=message,
             text=response_text(
@@ -244,11 +252,17 @@ def send_photo_with_default_markup(chat_id, photo):
         "👎": {'callback_data': f'dislike|{photo["file_unique_id"]}|{photo.get("taste_similarity")}'},
         "❤️": {'callback_data': f'like|{photo["file_unique_id"]}|{photo.get("taste_similarity")}'},
     }, row_width=3)
+    if photo.get("taste_similarity") > 0:
+        caption = f'{round(photo.get("taste_similarity") * 100)}%'
+    elif photo.get("taste_similarity") < 0:
+        caption = "🔁"
+    else:
+        caption = '🔀'
     bot.send_photo(
         chat_id=chat_id,
         photo=Image.objects.get(file_unique_id=photo["file_unique_id"]).file_id,
         reply_markup=markup,
-        caption=f'{round(photo.get("taste_similarity") * 100)}%' if photo.get("taste_similarity") > 0 else '🔀'
+        caption=caption
     )
 
 
@@ -271,9 +285,6 @@ def send_photo(message):
                 tg_id=message.from_user.id
             ),
         )
-    if ImageUploadCache.need_to_upload(time.time() // 60):
-        ImageUploadCache.need_to_upload.cache_clear()
-        manage_queue()
 
 
 @bot.callback_query_handler(func=lambda callback: callback.data.startswith('delete'))
@@ -281,13 +292,14 @@ def send_photo(message):
 def delete_photo(callback: CallbackQuery):
     _, file_unique_id = callback.data.split('|')
     Image.delete_image(callback.from_user.id, file_unique_id)
-    bot.answer_callback_query(
-        callback_query_id=callback.id,
-        text=response_text(
-            template='img_deleted',
-            tg_id=callback.from_user.id
-        ),
-    )
+    with suppress(ApiTelegramException):
+        bot.answer_callback_query(
+            callback_query_id=callback.id,
+            text=response_text(
+                template='img_deleted',
+                tg_id=callback.from_user.id
+            ),
+        )
     bot.delete_message(callback.message.chat.id, callback.message.id)
 
 
@@ -296,28 +308,14 @@ def delete_photo(callback: CallbackQuery):
 def block_photo(callback: CallbackQuery):
     _, file_unique_id = callback.data.split('|')
     ImageBlock.block_image(callback.from_user.id, file_unique_id)
-    bot.answer_callback_query(
-        callback_query_id=callback.id,
-        text=response_text(
-            template='img_blocked',
-            tg_id=callback.from_user.id
-        ),
-    )
-    bot.delete_message(callback.message.chat.id, callback.message.id)
-
-
-@bot.callback_query_handler(func=lambda callback: callback.data.startswith('remove_from_queue'))
-@timeit
-def remove_from_queue(callback: CallbackQuery):
-    image = ImageUploadCache.objects.filter(response_message_id=callback.message.id).first()
-    ImageUploadCache.remove_from_queue([image.file_id])
-    bot.answer_callback_query(
-        callback_query_id=callback.id,
-        text=response_text(
-            template='img_deleted',
-            tg_id=callback.from_user.id
-        ),
-    )
+    with suppress(ApiTelegramException):
+        bot.answer_callback_query(
+            callback_query_id=callback.id,
+            text=response_text(
+                template='img_blocked',
+                tg_id=callback.from_user.id
+            ),
+        )
     bot.delete_message(callback.message.chat.id, callback.message.id)
 
 
@@ -335,17 +333,16 @@ def score_photo(callback: CallbackQuery):
             IMAGES_CACHE[tg_id] = Image.update_image_cache(tg_id, IMAGES_CACHE[tg_id])
     else:
         score = 1
-    try:
+    with suppress(django.db.utils.IntegrityError):
         ImageScore.new_score(
             tg_id=callback.from_user.id,
             file_unique_id=unique_id,
             score=score,
         )
-    except django.db.utils.IntegrityError:
-        pass
     callback.message.from_user = callback.from_user
     send_photo(callback.message)
-    bot.answer_callback_query(callback_query_id=callback.id)
+    with suppress(ApiTelegramException):
+        bot.answer_callback_query(callback_query_id=callback.id)
     if action == 'dislike':
         bot.delete_message(callback.message.chat.id, callback.message.id)
     else:
@@ -381,7 +378,8 @@ def my_stat(message: Message) -> None:
 )
 def confirm_report(callback: CallbackQuery):
     action, unique_id = callback.data.split('|')
-    bot.answer_callback_query(callback_query_id=callback.id)
+    with suppress(ApiTelegramException):
+        bot.answer_callback_query(callback_query_id=callback.id)
     callback.message.from_user = callback.from_user
     if action == "reject_report":
         markup = quick_markup({
@@ -445,7 +443,8 @@ def report_photo(callback: CallbackQuery):
         "🔙": {'callback_data': f'reject_report|{unique_id}'},
         "❗️": {'callback_data': f'confirm_report|{unique_id}'},
     })
-    bot.answer_callback_query(callback_query_id=callback.id)
+    with suppress(ApiTelegramException):
+        bot.answer_callback_query(callback_query_id=callback.id)
     bot.edit_message_caption(
         chat_id=callback.message.chat.id,
         message_id=callback.message.id,

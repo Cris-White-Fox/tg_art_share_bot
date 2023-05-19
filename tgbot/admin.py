@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.db import models
 from django.db.models import Q
-from .models import Profile, Image, ImageScore, Report, ImageBlock, ImageUploadCache
+from .models import Profile, Image, ImageScore, Report, ImageBlock
 
 
 @admin.register(Profile)
@@ -90,9 +90,3 @@ class ImageBlockAdmin(admin.ModelAdmin):
     readonly_fields = ('scheme_image_tag',)
     list_per_page = 25
 
-
-@admin.register(ImageUploadCache)
-class ImageUploadCacheAdmin(admin.ModelAdmin):
-    list_display = ('profile', 'file_id', 'scheme_image_tag', 'datetime',)
-    readonly_fields = ('scheme_image_tag',)
-    list_per_page = 25

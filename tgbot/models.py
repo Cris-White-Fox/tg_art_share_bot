@@ -1,7 +1,7 @@
 import datetime
 from functools import lru_cache
 
-from django.db.models.functions import Cast
+from django.db.models.functions import Cast, Coalesce
 from django.utils import timezone
 from django.db import models
 from django.db.models import Sum, Q, Count
@@ -75,7 +75,7 @@ class Profile(models.Model):
                 + cls.objects.filter(image_score__isnull=True).count()
             ) * 100 // profiles_count
         if similar_profiles := cls.get_similar_profiles(tg_id):
-            similar_profiles_count = similar_profiles.count()
+            similar_profiles_count = similar_profiles.filter(taste_sim__gt=0, count__gte=10).count()
         else:
             similar_profiles_count = 0
         return uploaded_images, uploaded_images_position, scores_from, score_images_position, similar_profiles_count
@@ -99,7 +99,7 @@ class Profile(models.Model):
                         filter=Q(image_score__image__in=my_dislikes)
                     )
                 ), models.FloatField()) / models.F('count'),
-            ).filter(taste_sim__gt=0, count__gte=1)
+            ).filter(count__gte=1)
         return profiles
 
     class Meta:
@@ -179,6 +179,16 @@ class Image(models.Model):
         return 0
 
     @classmethod
+    def get_last_reported_profile(cls, tg_id,):
+        if reported_profile := Report.objects \
+                .filter(profile__tg_id=tg_id, datetime__gte=datetime_now() - datetime.timedelta(hours=6)) \
+                .order_by('-datetime') \
+                .values('image__profile') \
+                .first():
+            return reported_profile['image__profile']
+        return 0
+
+    @classmethod
     def random_images(cls, tg_id, count=10):
         images = (
             Image.objects
@@ -213,43 +223,87 @@ class Image(models.Model):
         return cls.objects.filter(image_score__profile__tg_id=tg_id, image_score__score__lte=0)
 
     @classmethod
-    def colab_filter_images(cls, tg_id):
+    def colab_filter_images(cls, tg_id, count=50):
         profiles = Profile.get_similar_profiles(tg_id)
-        height_tier_profiles = profiles.filter(taste_sim__gte=0.5)
-        mid_tier_profiles = profiles.filter(taste_sim__lt=0.5, taste_sim__gte=0.2)
-        low_tier_profiles = profiles.filter(taste_sim__lt=0.2)
-        disliked_profile = cls.get_last_disliked_profile(tg_id)
-        images = (
+        heigh_tier_profiles = Cast(
+            Coalesce(Sum(
+                models.F("image_score__score"),
+                filter=Q(image_score__profile__tg_id__in=profiles.filter(taste_sim__gte=0.5).values('tg_id')),
+                distinct=True,
+            ), 0.0),
+            models.FloatField(),
+        )
+
+        mid_tier_profiles = Cast(
+            Coalesce(Sum(
+                models.F("image_score__score"),
+                filter=Q(image_score__profile__tg_id__in=profiles.filter(
+                    taste_sim__gte=0.2,
+                    taste_sim__lt=0.5
+                ).values('tg_id')),
+                distinct=True,
+            ), 0.0),
+            models.FloatField(),
+        ) * 0.5
+
+        low_tier_profiles = Cast(
+            Coalesce(Sum(
+                models.F("image_score__score"),
+                filter=Q(image_score__profile__tg_id__in=profiles.filter(
+                    taste_sim__gte=0,
+                    taste_sim__lt=0.2
+                ).values('tg_id')),
+                distinct=True,
+            ), 0.0),
+            models.FloatField(),
+        ) * 0.2
+
+        positive_score = heigh_tier_profiles + mid_tier_profiles + low_tier_profiles
+
+        low_negative_profiles = Cast(
+            Coalesce(Count(
+                models.F("profile"),
+                filter=Q(profile__tg_id__in=profiles.filter(
+                    taste_sim__gte=-0.3,
+                    taste_sim__lt=0
+                ).values('tg_id')),
+                distinct=True,
+            ), 0.0),
+            models.FloatField(),
+        ) * 0.2
+
+        heigh_negative_profiles = Cast(
+            Coalesce(Count(
+                models.F("profile"),
+                filter=Q(profile__tg_id__in=profiles.filter(taste_sim__lt=-0.3).values('tg_id')),
+                distinct=True,
+            ), 0.0),
+            models.FloatField(),
+        ) * 0.5
+
+        negative_score = low_negative_profiles + heigh_negative_profiles
+
+        score_count = Cast(
+            Coalesce(Count(
+                "image_score",
+                filter=Q(image_score__profile__tg_id__in=profiles.values('tg_id')),
+                distinct=True,
+            ), 0.0),
+            models.FloatField(),
+        )
+
+        reported_profile = cls.get_last_reported_profile(tg_id)
+
+        image_ids = list(
             cls.objects
                 .exclude(image_score__profile__tg_id=tg_id)
-                .exclude(profile=disliked_profile)
+                .exclude(profile=reported_profile)
                 .filter(block__isnull=True)
                 .values('file_unique_id')
-                .annotate(
-                    score_count=Count(
-                        "image_score",
-                        filter=Q(image_score__profile__tg_id__in=profiles.values('tg_id')),
-                    ),
-                    report_count=Count("report"),
-                )
+                .annotate(report_count=Count("report", distinct=True))
                 .filter(report_count__lte=2)
-        )
-        image_ids = list(
-            images.annotate(
-                taste_similarity=models.functions.Coalesce((
-                    Sum(
-                        models.F("image_score__score"),
-                        filter=Q(image_score__profile__tg_id__in=height_tier_profiles.values('tg_id'))
-                    ) + Sum(
-                        models.F("image_score__score"),
-                        filter=Q(image_score__profile__tg_id__in=mid_tier_profiles.values('tg_id'))
-                    ) * 0.5 + Sum(
-                        models.F("image_score__score"),
-                        filter=Q(image_score__profile__tg_id__in=low_tier_profiles.values('tg_id'))
-                    ) * 0.2
-                ) / models.F("score_count"), 0.0)
-            )
-            .order_by('-taste_similarity', '?')[:50]
+                .annotate(taste_similarity=positive_score / (score_count + 1) - negative_score)
+                .order_by('-taste_similarity', '?')[:count]
         )
         return image_ids
 
@@ -383,54 +437,3 @@ class ImageBlock(models.Model):
         return cls.objects.create(
             image=Image.objects.get(file_unique_id=file_unique_id, profile__tg_id=tg_id),
         )
-
-
-class ImageUploadCache(models.Model):
-    profile = models.ForeignKey(
-        Profile,
-        verbose_name="Профиль владельца",
-        on_delete=models.CASCADE,
-        related_name='image_upload_cache'
-    )
-    file_id = models.TextField(verbose_name="Идентификатор изображения", unique=True)
-    image_message_id = models.IntegerField(verbose_name="Идентификатор сообщения пользователя")
-    response_message_id = models.IntegerField(verbose_name="Идентификатор сообщения ответа")
-    datetime = models.DateTimeField(verbose_name="Дата взаимодействия", default=datetime_now)
-
-    @lru_cache
-    def scheme_image_tag(self):
-        try:
-            return mark_safe('<img src = "{}" width="300">'.format(
-                bot.get_file_url(self.file_id)
-            ))
-        except:
-            return mark_safe('<img src = "" width="300">')
-
-    scheme_image_tag.short_description = 'image_view'
-    scheme_image_tag.allow_tags = True
-
-    @classmethod
-    def add_to_queue(cls, tg_id, file_id, image_message_id, response_message_id):
-        return cls.objects.create(
-            profile=Profile.objects.get(tg_id=tg_id),
-            file_id=file_id,
-            image_message_id=image_message_id,
-            response_message_id=response_message_id,
-        )
-
-    @classmethod
-    def get_from_queue(cls, count=25, tg_id=None):
-        images = cls.objects
-        if tg_id:
-            images = images.filter(profile__tg_id=tg_id)
-        return images.order_by('datetime')[:count]
-
-    @classmethod
-    def remove_from_queue(cls, file_ids: list):
-        cls.objects.filter(file_id__in=file_ids).delete()
-
-    @classmethod
-    @lru_cache
-    def need_to_upload(cls, cache_ttl=None):
-        return cls.objects.count() > 25 \
-               or cls.objects.filter(datetime__lt=datetime_now() - datetime.timedelta(minutes=1)).exists()

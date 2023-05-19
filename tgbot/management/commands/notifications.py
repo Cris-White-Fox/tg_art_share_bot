@@ -16,8 +16,7 @@ class Command(BaseCommand):
 def job():
     profiles = Profile.list_need_notification()
     for tg_id in profiles:
-        if file_unique_ids := Image.colab_filter_images(tg_id) or Image.random_images(tg_id):
-            continue
+        if file_unique_ids := Image.colab_filter_images(tg_id, 1):
             try:
                 bot.send_message(
                     chat_id=tg_id,
