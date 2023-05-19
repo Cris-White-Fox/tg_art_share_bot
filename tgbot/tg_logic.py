@@ -429,6 +429,8 @@ def confirm_report(callback: CallbackQuery):
 @bot.callback_query_handler(func=lambda callback: callback.data.startswith('report'))
 @timeit
 def report_photo(callback: CallbackQuery):
+    with suppress(ApiTelegramException):
+        bot.answer_callback_query(callback_query_id=callback.id)
     if Report.check_limit(callback.from_user.id):
         bot.send_message(
             chat_id=callback.message.chat.id,
@@ -443,8 +445,6 @@ def report_photo(callback: CallbackQuery):
         "🔙": {'callback_data': f'reject_report|{unique_id}'},
         "❗️": {'callback_data': f'confirm_report|{unique_id}'},
     })
-    with suppress(ApiTelegramException):
-        bot.answer_callback_query(callback_query_id=callback.id)
     bot.edit_message_caption(
         chat_id=callback.message.chat.id,
         message_id=callback.message.id,

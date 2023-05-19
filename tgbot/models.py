@@ -84,22 +84,35 @@ class Profile(models.Model):
     def get_similar_profiles(cls, tg_id):
         my_likes = Image.get_likes(tg_id)
         my_dislikes = Image.get_dislikes(tg_id)
+        scores_to_likes = Cast(
+            Coalesce(Sum(
+                "image_score__score",
+                filter=Q(image_score__image__in=my_likes),
+                distinct=True,
+            ), 0.0),
+            models.FloatField(),
+        )
+        scores_to_dislikes = Cast(
+            Coalesce(Sum(
+                "image_score__score",
+                filter=Q(image_score__image__in=my_dislikes),
+                distinct=True,
+            ), 0.0),
+            models.FloatField(),
+        )
+        scores_count = Cast(
+            Coalesce(Count(
+                "image_score",
+                filter=Q(image_score__image__in=my_likes) | Q(image_score__image__in=my_dislikes),
+                distinct=True,
+            ), 0.0),
+            models.FloatField(),
+        )
         profiles = cls.objects.exclude(tg_id=tg_id).values('tg_id') \
             .annotate(
-                count=Count(
-                    "image_score",
-                    filter=Q(image_score__image__in=my_likes) | Q(image_score__image__in=my_dislikes)
-                ),
-                taste_sim=Cast((
-                    Sum(
-                        "image_score__score",
-                        filter=Q(image_score__image__in=my_likes)
-                    ) - Sum(
-                        "image_score__score",
-                        filter=Q(image_score__image__in=my_dislikes)
-                    )
-                ), models.FloatField()) / models.F('count'),
-            ).filter(count__gte=1)
+                scores_count=scores_count,
+                taste_sim=(scores_to_likes - scores_to_dislikes) / (models.F('scores_count') + 1),
+            ).filter(scores_count__gte=1)
         return profiles
 
     class Meta:
@@ -189,32 +202,6 @@ class Image(models.Model):
         return 0
 
     @classmethod
-    def random_images(cls, tg_id, count=10):
-        images = (
-            Image.objects
-                .filter(block__isnull=True)
-                .exclude(image_score__profile__tg_id=tg_id)
-                .values('file_unique_id')
-                .annotate(
-                    report_count=Count("report"),
-                    score_count=Count("image_score"),
-                )
-                .filter(report_count__lte=2)
-                .order_by('score_count', '?')
-        )
-        disliked_profile = cls.get_last_disliked_profile(tg_id)
-        if file_unique_ids := images.exclude(profile=disliked_profile):
-            return [{
-                "file_unique_id": fud,
-                "taste_similarity": 0,
-            } for fud in file_unique_ids.values_list('file_unique_id', flat=True)[:count]]
-
-        return [{
-            "file_unique_id": fud,
-            "taste_similarity": 0,
-        } for fud in images.values_list('file_unique_id', flat=True)[:count]]
-
-    @classmethod
     def get_likes(cls, tg_id):
         return cls.objects.filter(image_score__profile__tg_id=tg_id, image_score__score__gte=1)
 
@@ -225,46 +212,36 @@ class Image(models.Model):
     @classmethod
     def colab_filter_images(cls, tg_id, count=50):
         profiles = Profile.get_similar_profiles(tg_id)
-        heigh_tier_profiles = Cast(
+        height = 0.2
+        negative = -0.2
+        height_tier_profiles = Cast(
             Coalesce(Sum(
                 models.F("image_score__score"),
-                filter=Q(image_score__profile__tg_id__in=profiles.filter(taste_sim__gte=0.5).values('tg_id')),
+                filter=Q(image_score__profile__tg_id__in=profiles.filter(taste_sim__gte=height).values('tg_id')),
                 distinct=True,
             ), 0.0),
             models.FloatField(),
         )
-
-        mid_tier_profiles = Cast(
-            Coalesce(Sum(
-                models.F("image_score__score"),
-                filter=Q(image_score__profile__tg_id__in=profiles.filter(
-                    taste_sim__gte=0.2,
-                    taste_sim__lt=0.5
-                ).values('tg_id')),
-                distinct=True,
-            ), 0.0),
-            models.FloatField(),
-        ) * 0.5
 
         low_tier_profiles = Cast(
             Coalesce(Sum(
                 models.F("image_score__score"),
                 filter=Q(image_score__profile__tg_id__in=profiles.filter(
                     taste_sim__gte=0,
-                    taste_sim__lt=0.2
+                    taste_sim__lt=height
                 ).values('tg_id')),
                 distinct=True,
             ), 0.0),
             models.FloatField(),
-        ) * 0.2
+        ) * 0.5
 
-        positive_score = heigh_tier_profiles + mid_tier_profiles + low_tier_profiles
+        positive_score = height_tier_profiles + low_tier_profiles
 
         low_negative_profiles = Cast(
             Coalesce(Count(
                 models.F("profile"),
                 filter=Q(profile__tg_id__in=profiles.filter(
-                    taste_sim__gte=-0.3,
+                    taste_sim__gte=negative,
                     taste_sim__lt=0
                 ).values('tg_id')),
                 distinct=True,
@@ -272,16 +249,16 @@ class Image(models.Model):
             models.FloatField(),
         ) * 0.2
 
-        heigh_negative_profiles = Cast(
+        height_negative_profiles = Cast(
             Coalesce(Count(
                 models.F("profile"),
-                filter=Q(profile__tg_id__in=profiles.filter(taste_sim__lt=-0.3).values('tg_id')),
+                filter=Q(profile__tg_id__in=profiles.filter(taste_sim__lt=negative).values('tg_id')),
                 distinct=True,
             ), 0.0),
             models.FloatField(),
         ) * 0.5
 
-        negative_score = low_negative_profiles + heigh_negative_profiles
+        negative_score = low_negative_profiles + height_negative_profiles
 
         score_count = Cast(
             Coalesce(Count(
@@ -385,10 +362,9 @@ class Report(models.Model):
 
     @classmethod
     def check_limit(cls, tg_id):
-        ct = datetime_now().replace(second=0, microsecond=0)
         return cls.objects.filter(
             profile__tg_id=tg_id,
-            datetime__gte=ct.replace(hour=0, minute=0, second=0, microsecond=0),
+            datetime__gte=datetime_now().replace(hour=0, minute=0, second=0, microsecond=0),
         ).count() >= 15
 
     @classmethod
