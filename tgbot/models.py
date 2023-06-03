@@ -44,8 +44,8 @@ class Profile(models.Model):
         return list(cls.objects.exclude(
             last_bot_message__lte=datetime.datetime.now(tz=timezone.utc) - datetime.timedelta(days=14)
         ).exclude(
-            last_bot_message__gte=datetime.datetime.now(tz=timezone.utc) - datetime.timedelta(days=2)
-        ).values_list('tg_id', flat=True))
+            last_bot_message__gte=datetime.datetime.now(tz=timezone.utc) - datetime.timedelta(days=3)
+        ))
 
     @classmethod
     def update_notification(cls, tg_id):

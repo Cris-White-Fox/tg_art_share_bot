@@ -17,21 +17,21 @@ class Command(BaseCommand):
 def job():
     profiles = Profile.list_need_notification()
     cf = ColabFilter()
-    for tg_id in profiles:
-        if file_unique_ids := cf.predict(tg_id):
+    for profile in profiles:
+        if file_unique_ids := cf.predict(profile.id):
             try:
                 bot.send_message(
-                    chat_id=tg_id,
+                    chat_id=profile.tg_id,
                     text=response_text(
                         template='img_notification',
-                        tg_id=tg_id
+                        tg_id=profile.tg_id
                     )
                 )
-                send_photo_with_default_markup(tg_id, file_unique_ids[0])
+                send_photo_with_default_markup(profile.tg_id, file_unique_ids[0])
             except telebot.apihelper.ApiTelegramException:
-                Profile.block_profile(tg_id)
+                Profile.block_profile(profile.tg_id)
             else:
-                Profile.update_notification(tg_id)
+                Profile.update_notification(profile.tg_id)
 
 
 def notifications_loop():

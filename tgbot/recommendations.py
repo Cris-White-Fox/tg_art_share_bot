@@ -21,12 +21,7 @@ class ColabFilter():
         self.score_count = ImageScore.objects.count()
 
     def update_data(self):
-        scored_images = (
-            Image.objects.values("pk")
-                .annotate(score_count=Count("image_score", distinct=True))
-                .filter(score_count__gte=1).values("pk")
-        )
-        score_data = ImageScore.objects.filter(image__in=scored_images)
+        score_data = ImageScore.objects.all()
         df = pd.DataFrame(list(score_data.values("profile_id", "image_id", "score")))
         df = df.pivot_table(columns='image_id', index='profile_id', values='score').reset_index()
         data = df.to_numpy(dtype=np.float16)[:, 1:]
@@ -62,16 +57,17 @@ class ColabFilter():
         self.cosine = cosine.T * inv_mag
 
     def check_updates(self):
-        self.update_counter += 1
-        if self.update_counter > 10:
-            self.update_counter = 0
-            score_count = ImageScore.objects.count()
-            if score_count - self.score_count > 30:
+        score_count = ImageScore.objects.count()
+        if self.score_count != score_count:
+            self.update_data()
+            self.update_counter += 1
+            self.score_count = score_count
+            if self.update_counter > 10:
                 self.score_count = score_count
                 self.update_cosine()
+                self.update_counter = 0
 
     def predict(self, target_profile_id):
-        self.update_data()
         self.check_updates()
         if target_profile_id not in self.user_ids:
             return [{
@@ -80,35 +76,38 @@ class ColabFilter():
             }]
 
         profile_index = self.user_ids.index(target_profile_id)
-        user_cosine = self.cosine[profile_index]
+        users = np.where(self.cosine[profile_index] > 0)
         items = np.where(self.raw_data[profile_index] == 0)
         if len(items[0]) == 0:
             return []
-        prediction_data = self.raw_data[:, items]
-        prediction = np.dot(prediction_data.T, user_cosine)[:, 0]
-        top_items_pos = prediction.argsort()[-10:]
+        user_cosine_data = self.cosine[profile_index, users][0]
+        prediction_data = self.raw_data[users, :][0, :, :][:, items][:, 0, :]
+        prediction = np.dot(prediction_data.T, user_cosine_data) / np.count_nonzero(prediction_data, axis=0) + 1
+        top_items_pos = prediction.argsort()[-50:]
         predict_image = [
             {
                 "taste_similarity": prediction[item_pos],
                 "image_id": self.image_ids[items[0][item_pos]],
             } for item_pos in reversed(top_items_pos)
         ]
-        print(predict_image)
         return predict_image
 
+    def test_colab_filter(self):
+        for profile_index, target_profile_id in enumerate(self.user_ids):
+            users = np.where(self.cosine[profile_index] > 0)
+            items = np.where(self.raw_data[profile_index] != 0)
+            if len(items[0]) == 0:
+                continue
+            user_cosine_data = self.cosine[profile_index, users][0]
+            prediction_data = self.raw_data[users, :][0, :, :][:, items][:, 0, :]
+            raw_prediction = np.dot(prediction_data.T, user_cosine_data)
+            scores_count = np.count_nonzero(prediction_data, axis=0) + 1
+            prediction = raw_prediction / scores_count
 
-# def test_colab_filter():
-#     data, image_id, user_id, raw_data = get_data()
-#     cosine = get_cosine(data)
-#
-#     profile_index = 0
-#     user_cosine = cosine[profile_index]
-#     items = np.where(raw_data[profile_index] != 0)
-#     prediction_data = raw_data[1:, items]
-#     prediction = np.dot(prediction_data.T, user_cosine[1:])[:, 0]
-#     prediction[prediction >= 0] = 1
-#     prediction[prediction < 0] = -1
-#     diff = raw_data[0, items].clip(-1, 1) - prediction
-#     print('correct:', len(diff[diff == 0]))
-#     print('false positive:', len(diff[diff == -2]))
-#     print("false negative: ", len(diff[diff == 2]))
+            prediction[prediction >= 0] = 1
+            prediction[prediction < 0] = -1
+            rd = self.raw_data[0, items]
+            rd[rd >= 0] = 1
+            rd[rd < 0] = -1
+            diff = rd - prediction
+            print('correct:', len(diff[diff == 0]), '| false positive:', len(diff[diff == -2]), "| false negative: ", len(diff[diff == 2]), "| result: ", len(diff[diff == 0]) / len(diff[0]))
