@@ -42,12 +42,13 @@ def telegram_handle(request):
         if update.message and update.message.photo and time.time() - LAST_PHOTO < 1:
             UPDATE_QUEUE.append(update)
             LAST_PHOTO = time.time()
-
         else:
             process_new_update(update)
             if UPDATE_QUEUE:
                 threaded_process_new_updates(UPDATE_QUEUE)
                 UPDATE_QUEUE = []
+            if update.message and update.message.photo:
+                LAST_PHOTO = time.time()
 
         if len(UPDATE_QUEUE) > 15:
             threaded_process_new_updates(UPDATE_QUEUE)
