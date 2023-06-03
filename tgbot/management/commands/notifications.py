@@ -3,8 +3,9 @@ import time
 import telebot
 from django.core.management.base import BaseCommand
 
-from tgbot.models import Image, Profile
+from tgbot.models import Profile
 from project.settings import bot
+from tgbot.recommendations import ColabFilter
 from tgbot.tg_logic import response_text, send_photo_with_default_markup
 
 
@@ -15,8 +16,9 @@ class Command(BaseCommand):
 
 def job():
     profiles = Profile.list_need_notification()
+    cf = ColabFilter()
     for tg_id in profiles:
-        if file_unique_ids := Image.colab_filter_images(tg_id, 1):
+        if file_unique_ids := cf.predict(tg_id):
             try:
                 bot.send_message(
                     chat_id=tg_id,

@@ -15,11 +15,12 @@ from telebot.apihelper import ApiTelegramException
 from project.settings import bot
 
 from tgbot.models import Image, ImageScore, Profile, Report, ImageBlock
+from tgbot.recommendations import ColabFilter
 
 TIMERS = {}
 IMAGES_CACHE = {}
 DB_LOCK = Lock()
-
+COLAB_FILTER = ColabFilter()
 
 
 def timers_view():
@@ -247,20 +248,21 @@ def save_photo(message: Message):
 
 
 def send_photo_with_default_markup(chat_id, photo):
+    image = Image.objects.get(pk=photo["image_id"])
     markup = quick_markup({
-        "❗️": {'callback_data': f'report|{photo["file_unique_id"]}'},
-        "👎": {'callback_data': f'dislike|{photo["file_unique_id"]}|{photo.get("taste_similarity")}'},
-        "❤️": {'callback_data': f'like|{photo["file_unique_id"]}|{photo.get("taste_similarity")}'},
+        "❗️": {'callback_data': f'report|{image.file_unique_id}'},
+        "👎": {'callback_data': f'dislike|{image.file_unique_id}|{photo.get("taste_similarity")}'},
+        "❤️": {'callback_data': f'like|{image.file_unique_id}|{photo.get("taste_similarity")}'},
     }, row_width=3)
     if photo.get("taste_similarity") > 0:
-        caption = f'{round(photo.get("taste_similarity") * 100)}%'
+        caption = f'{round(float(photo.get("taste_similarity")), 2)}'
     elif photo.get("taste_similarity") < 0:
         caption = "🔁"
     else:
         caption = '🔀'
     bot.send_photo(
         chat_id=chat_id,
-        photo=Image.objects.get(file_unique_id=photo["file_unique_id"]).file_id,
+        photo=image.file_id,
         reply_markup=markup,
         caption=caption
     )
@@ -274,7 +276,7 @@ def send_photo(message):
     global IMAGES_CACHE
     if IMAGES_CACHE.get(user_id):
         send_photo_with_default_markup(message.chat.id, IMAGES_CACHE[user_id].pop(0))
-    elif file_unique_ids := Image.colab_filter_images(user_id):
+    elif file_unique_ids := COLAB_FILTER.predict(Profile.objects.get(tg_id=user_id).id):
         IMAGES_CACHE[user_id] = file_unique_ids
         send_photo_with_default_markup(message.chat.id, IMAGES_CACHE[user_id].pop(0))
     else:
@@ -421,6 +423,11 @@ def confirm_report(callback: CallbackQuery):
             tg_id=callback.from_user.id
         ),
     )
+
+    tg_id = callback.from_user.id
+    global IMAGES_CACHE
+    if IMAGES_CACHE.get(tg_id):
+        IMAGES_CACHE[tg_id] = Image.update_image_cache(tg_id, IMAGES_CACHE[tg_id])
 
     callback.message.from_user = callback.from_user
     send_photo(callback.message)

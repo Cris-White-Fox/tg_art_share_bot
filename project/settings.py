@@ -137,6 +137,23 @@ MEDIA_ROOT = BASE_DIR.joinpath(MEDIA_URL)
 STATIC_URL = 'static/'
 STATIC_ROOT = BASE_DIR.joinpath(STATIC_URL)
 
+LOGGING = {
+    'version': 1,
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+        },
+    },
+    'loggers': {
+        'django.db.backends': {
+            'level': 'DEBUG',
+        },
+    },
+    'root': {
+        'handlers': ['console'],
+    }
+}
+
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.DEBUG
