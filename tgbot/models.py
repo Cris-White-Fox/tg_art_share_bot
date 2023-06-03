@@ -286,10 +286,10 @@ class Image(models.Model):
 
     @classmethod
     def update_image_cache(cls, tg_id, image_ids: list[dict]):
-        file_unique_ids = [iid['file_unique_id'] for iid in image_ids]
+        file_unique_ids = [iid['image_id'] for iid in image_ids]
         disliked_profile = cls.get_last_disliked_profile(tg_id)
-        actual = cls.objects.filter(file_unique_id__in=file_unique_ids).exclude(profile=disliked_profile).values_list('file_unique_id', flat=True)
-        return [iid for iid in image_ids if iid['file_unique_id'] in actual]
+        actual = cls.objects.filter(id__in=file_unique_ids).exclude(profile=disliked_profile).values_list('id', flat=True)
+        return [iid for iid in image_ids if iid['image_id'] in actual]
 
     @classmethod
     def list_reported_photos(cls, tg_id):
