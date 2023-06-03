@@ -82,7 +82,7 @@ class ColabFilter():
             return []
         user_cosine_data = self.cosine[profile_index, users][0]
         prediction_data = self.raw_data[users, :][0, :, :][:, items][:, 0, :]
-        prediction = np.dot(prediction_data.T, user_cosine_data) / np.count_nonzero(prediction_data, axis=0) + 1
+        prediction = np.dot(prediction_data.T, user_cosine_data) / (np.count_nonzero(prediction_data, axis=0) + 1)
         top_items_pos = prediction.argsort()[-50:]
         predict_image = [
             {
