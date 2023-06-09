@@ -4,7 +4,7 @@ from functools import lru_cache
 from django.db.models.functions import Cast, Coalesce
 from django.utils import timezone
 from django.db import models
-from django.db.models import Sum, Q, Count
+from django.db.models import Sum, Q, Count, Max
 from django.utils.safestring import mark_safe
 
 from project.settings import bot
@@ -332,6 +332,19 @@ class ImageScore(models.Model):
             profile=Profile.objects.get(tg_id=tg_id),
             image=Image.objects.get(file_unique_id=file_unique_id),
             score=score,
+        )
+
+    @classmethod
+    def last_dislikes(cls, profile_id):
+        ct = datetime_now()
+        return cls.objects.filter(
+            profile=profile_id,
+            score__lt=0,
+            datetime__gte=datetime_now() - datetime.timedelta(days=14)
+        ).values(
+            "image__profile"
+        ).annotate(
+            last=ct - Max("datetime")
         )
 
     class Meta:

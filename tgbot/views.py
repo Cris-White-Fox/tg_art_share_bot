@@ -53,6 +53,7 @@ def telegram_handle(request):
         if len(UPDATE_QUEUE) > 15:
             threaded_process_new_updates(UPDATE_QUEUE)
             UPDATE_QUEUE = []
+            LAST_PHOTO = time.time()
 
         UPDATE_IDS = [update.update_id] + UPDATE_IDS[:1000]
         return JsonResponse({"ok": "POST processed"})

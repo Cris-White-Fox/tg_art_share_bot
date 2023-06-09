@@ -1,11 +1,10 @@
 import random
 
-from django.db.models import Count
 import pandas as pd
 import numpy as np
 import numpy.ma as ma
 
-from tgbot.models import Image, ImageScore
+from tgbot.models import ImageScore, ImageBlock
 
 
 class ColabFilter():
@@ -21,7 +20,7 @@ class ColabFilter():
         self.score_count = ImageScore.objects.count()
 
     def update_data(self):
-        score_data = ImageScore.objects.all()
+        score_data = ImageScore.objects.exclude(image__in=ImageBlock.objects.values("image"))
         df = pd.DataFrame(list(score_data.values("profile_id", "image_id", "score")))
         df = df.pivot_table(columns='image_id', index='profile_id', values='score').reset_index()
         data = df.to_numpy(dtype=np.float16)[:, 1:]
@@ -63,7 +62,6 @@ class ColabFilter():
             self.update_counter += 1
             self.score_count = score_count
             if self.update_counter > 10:
-                self.score_count = score_count
                 self.update_cosine()
                 self.update_counter = 0
 
@@ -81,6 +79,12 @@ class ColabFilter():
         if len(items[0]) == 0:
             return []
         user_cosine_data = self.cosine[profile_index, users][0]
+        last_dislikes = ImageScore.last_dislikes(target_profile_id)
+        for last_dislike in last_dislikes:
+            disliked_profile_index = np.where(users[0] == self.user_ids.index(last_dislike["image__profile"]))[0]
+            if disliked_profile_index.size:
+                user_cosine_data[disliked_profile_index] -= 2 / (1 + last_dislike["last"].days)
+
         prediction_data = self.raw_data[users, :][0, :, :][:, items][:, 0, :]
         prediction = np.dot(prediction_data.T, user_cosine_data) / (np.count_nonzero(prediction_data, axis=0) + 1)
         top_items_pos = prediction.argsort()[-50:]

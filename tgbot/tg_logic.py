@@ -251,9 +251,10 @@ def send_photo_with_default_markup(chat_id, photo):
     image = Image.objects.get(pk=photo["image_id"])
     markup = quick_markup({
         "❗️": {'callback_data': f'report|{image.file_unique_id}'},
-        "👎": {'callback_data': f'dislike|{image.file_unique_id}|{photo.get("taste_similarity")}'},
-        "❤️": {'callback_data': f'like|{image.file_unique_id}|{photo.get("taste_similarity")}'},
-    }, row_width=3)
+        "👎": {'callback_data': f'dislike|{image.file_unique_id}'},
+        "❤️": {'callback_data': f'like|{image.file_unique_id}'},
+        "❤️‍🔥": {'callback_data': f'superlike|{image.file_unique_id}'},
+    }, row_width=4)
     if photo.get("taste_similarity") > 0:
         caption = f'{round(float(photo.get("taste_similarity")), 2)}'
     elif photo.get("taste_similarity") < 0:
@@ -322,7 +323,10 @@ def block_photo(callback: CallbackQuery):
 
 
 @bot.callback_query_handler(
-    func=lambda callback: callback.data.startswith('like') or callback.data.startswith('dislike')
+    func=lambda callback:
+        callback.data.startswith('superlike')
+        or callback.data.startswith('like')
+        or callback.data.startswith('dislike')
 )
 @timeit
 def score_photo(callback: CallbackQuery):
@@ -331,8 +335,9 @@ def score_photo(callback: CallbackQuery):
         score = -1
         tg_id = callback.from_user.id
         global IMAGES_CACHE
-        if IMAGES_CACHE.get(tg_id):
-            IMAGES_CACHE[tg_id] = Image.update_image_cache(tg_id, IMAGES_CACHE[tg_id])
+        IMAGES_CACHE[tg_id] = []
+    elif action == 'superlike':
+        score = 2
     else:
         score = 1
     with suppress(django.db.utils.IntegrityError):
@@ -388,7 +393,8 @@ def confirm_report(callback: CallbackQuery):
             "❗️": {'callback_data': f'report|{unique_id}'},
             "👎": {'callback_data': f'dislike|{unique_id}'},
             "❤️": {'callback_data': f'like|{unique_id}'},
-        }, row_width=3)
+            "❤️‍🔥": {'callback_data': f'superlike|{unique_id}'},
+        }, row_width=4)
         bot.edit_message_caption(
             chat_id=callback.message.chat.id,
             message_id=callback.message.id,
@@ -426,8 +432,7 @@ def confirm_report(callback: CallbackQuery):
 
     tg_id = callback.from_user.id
     global IMAGES_CACHE
-    if IMAGES_CACHE.get(tg_id):
-        IMAGES_CACHE[tg_id] = Image.update_image_cache(tg_id, IMAGES_CACHE[tg_id])
+    IMAGES_CACHE[tg_id] = []
 
     callback.message.from_user = callback.from_user
     send_photo(callback.message)
