@@ -5,6 +5,7 @@ import numpy as np
 import numpy.ma as ma
 
 from tgbot.models import ImageScore, ImageBlock
+from tgbot.helpers import timeit
 
 
 class ColabFilter():
@@ -19,6 +20,7 @@ class ColabFilter():
         self.update_counter = 0
         self.score_count = ImageScore.objects.count()
 
+    @timeit
     def update_data(self):
         score_data = ImageScore.objects.exclude(image__in=ImageBlock.objects.values("image"))
         if not score_data:
@@ -39,6 +41,7 @@ class ColabFilter():
         self.data = masked_data.filled(fill_value=0)
         return True
 
+    @timeit
     def update_cosine(self):
         # построить матрицу челик-челик
         similarity = np.dot(self.data, self.data.T)
@@ -69,6 +72,7 @@ class ColabFilter():
                 self.update_cosine()
                 self.update_counter = 0
 
+    @timeit
     def predict(self, target_profile_id):
         self.check_updates()
         if target_profile_id not in self.user_ids:

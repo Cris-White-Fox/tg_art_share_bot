@@ -7,7 +7,8 @@ import traceback
 import telebot
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from tgbot.tg_logic import bot, timers_view
+from tgbot.tg_logic import bot
+from tgbot.helpers import timers_view, timeit
 
 
 LAST_PHOTO = time.time()
@@ -22,6 +23,7 @@ def process_new_update(update):
         logging.exception(traceback.format_exc())
 
 
+@timeit
 def threaded_process_new_updates(updates):
     with concurrent.futures.ThreadPoolExecutor() as executor:
         for update in updates:

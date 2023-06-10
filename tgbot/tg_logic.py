@@ -16,21 +16,14 @@ from project.settings import bot
 
 from tgbot.models import Image, ImageScore, Profile, Report, ImageBlock
 from tgbot.recommendations import ColabFilter
+from tgbot.helpers import timeit
 
-TIMERS = {}
+
 IMAGES_CACHE = {}
 DB_LOCK = Lock()
 COLAB_FILTER = ColabFilter()
 
 
-def timers_view():
-    return {
-        func_name: {
-            "count": len(timer),
-            "median_time": sorted(timer)[len(timer)//2],
-            "worst 10": [round(t, 3) for t in sorted(timer, reverse=True)[:10]],
-        } for func_name, timer in TIMERS.items()
-    }
 
 
 def update_user(func):
@@ -39,20 +32,6 @@ def update_user(func):
         with DB_LOCK:
             Profile.update_profile(message.from_user.id, message.from_user.full_name, message.from_user.language_code)
         return func(message)
-    return inner
-
-
-def timeit(func):
-    def inner(*args, **kwargs):
-        global TIMERS
-        start = time.time()
-
-        result = func(*args, **kwargs)
-
-        timer = time.time() - start
-        TIMERS[str(func)] = [timer] + TIMERS.get(str(func), [])[:1000]
-        print(timers_view())
-        return result
     return inner
 
 
