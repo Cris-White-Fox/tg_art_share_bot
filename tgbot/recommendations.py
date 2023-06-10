@@ -14,13 +14,15 @@ class ColabFilter():
         self.raw_data = None
         self.data = None
         self.cosine = None
-        self.update_data()
-        self.update_cosine()
+        if self.update_data():
+            self.update_cosine()
         self.update_counter = 0
         self.score_count = ImageScore.objects.count()
 
     def update_data(self):
         score_data = ImageScore.objects.exclude(image__in=ImageBlock.objects.values("image"))
+        if not score_data:
+            return
         df = pd.DataFrame(list(score_data.values("profile_id", "image_id", "score")))
         df = df.pivot_table(columns='image_id', index='profile_id', values='score').reset_index()
         data = df.to_numpy(dtype=np.float16)[:, 1:]
@@ -29,11 +31,13 @@ class ColabFilter():
         self.raw_data = np.nan_to_num(data)
 
         # нормализовать и заполнить пустые нулями
-        np.clip(data, -10, 1, data)
+        # np.clip(data, -10, 2, data)
         masked_data = ma.masked_invalid(data, copy=False)
         ma_average = ma.average(masked_data, axis=1)
         masked_data = (masked_data.transpose() - ma_average).transpose()
-        self.data = (masked_data.filled(fill_value=0).T + ma_average.filled()).T
+        # self.data = (masked_data.filled(fill_value=0).T + ma_average.filled()).T
+        self.data = masked_data.filled(fill_value=0)
+        return True
 
     def update_cosine(self):
         # построить матрицу челик-челик
