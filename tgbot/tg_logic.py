@@ -314,7 +314,8 @@ def score_photo(callback: CallbackQuery):
         score = -1
         tg_id = callback.from_user.id
         global IMAGES_CACHE
-        IMAGES_CACHE[tg_id] = []
+        if IMAGES_CACHE.get(tg_id):
+            IMAGES_CACHE[tg_id] = Image.update_image_cache(tg_id, IMAGES_CACHE[tg_id])
     elif action == 'superlike':
         score = 2
     else:
@@ -411,7 +412,8 @@ def confirm_report(callback: CallbackQuery):
 
     tg_id = callback.from_user.id
     global IMAGES_CACHE
-    IMAGES_CACHE[tg_id] = []
+    if IMAGES_CACHE.get(tg_id):
+        IMAGES_CACHE[tg_id] = Image.update_image_cache(tg_id, IMAGES_CACHE[tg_id])
 
     callback.message.from_user = callback.from_user
     send_photo(callback.message)
