@@ -101,7 +101,7 @@ class ColabFilter():
 
         prediction_data = self.raw_data[users, :][:, items[0]]
         prediction = np.dot(prediction_data.T, user_cosine_data) / np.sqrt(np.count_nonzero(prediction_data, axis=0) + 1)
-        top_items_pos = prediction.argsort()[-1:]
+        top_items_pos = prediction.argsort()[-count:]
         predict_image = [
             {
                 "taste_similarity": prediction[item_pos],
