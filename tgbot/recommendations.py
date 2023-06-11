@@ -1,10 +1,11 @@
 import random
+import time
 
 import pandas as pd
 import numpy as np
 import numpy.ma as ma
 
-from tgbot.models import ImageScore, ImageBlock
+from tgbot.models import ImageScore, ImageBlock, Image
 from tgbot.helpers import timeit
 
 
@@ -15,13 +16,13 @@ class ColabFilter():
         self.raw_data = None
         self.data = None
         self.cosine = None
-        if self.update_data():
+        if self.update_data_from_db():
             self.update_cosine()
-        self.update_counter = 0
-        self.score_count = ImageScore.objects.count()
+        self.update_timer = time.time()
+        self.image_count = Image.objects.count()
 
     @timeit
-    def update_data(self):
+    def update_data_from_db(self):
         score_data = ImageScore.objects.exclude(image__in=ImageBlock.objects.values("image"))
         if not score_data:
             return
@@ -33,12 +34,20 @@ class ColabFilter():
         self.raw_data = np.nan_to_num(data)
 
         # нормализовать и заполнить пустые нулями
-        # np.clip(data, -10, 2, data)
         masked_data = ma.masked_invalid(data, copy=False)
         ma_average = ma.average(masked_data, axis=1)
         masked_data = (masked_data.transpose() - ma_average).transpose()
-        # self.data = (masked_data.filled(fill_value=0).T + ma_average.filled()).T
         self.data = masked_data.filled(fill_value=0)
+        return True
+
+    @timeit
+    def update_score(self, profile_id, image_id, score):
+        if profile_id not in self.user_ids or image_id not in self.image_ids:
+            return
+        profile_index = self.user_ids.index(profile_id)
+        image_index = self.image_ids.index(image_id)
+
+        self.raw_data[profile_index, image_index] = score
         return True
 
     @timeit
@@ -63,14 +72,12 @@ class ColabFilter():
         self.cosine = cosine.T * inv_mag
 
     def check_updates(self):
-        score_count = ImageScore.objects.count()
-        if self.score_count != score_count:
-            self.update_data()
-            self.update_counter += 1
-            self.score_count = score_count
-            if self.update_counter > 10:
+        image_count = Image.objects.count()
+        if image_count - self.image_count > 25 and time.time() - self.update_timer > 15 * 60:
+            self.image_count = image_count
+            if self.update_data_from_db():
                 self.update_cosine()
-                self.update_counter = 0
+            self.update_timer = time.time()
 
     @timeit
     def predict(self, target_profile_id):
@@ -82,19 +89,18 @@ class ColabFilter():
             }]
 
         profile_index = self.user_ids.index(target_profile_id)
-        users = np.where(self.cosine[profile_index] > 0)
+        last_dislikes = ImageScore.last_dislikes(target_profile_id)
+        users = np.setdiff1d(
+            np.where(self.cosine[profile_index] > 0),
+            np.array([self.user_ids.index(profile_id) for profile_id in last_dislikes])
+        )
         items = np.where(self.raw_data[profile_index] == 0)
         if len(items[0]) == 0:
             return []
-        user_cosine_data = self.cosine[profile_index, users][0]
-        last_dislikes = ImageScore.last_dislikes(target_profile_id)
-        for last_dislike in last_dislikes:
-            disliked_profile_index = np.where(users[0] == self.user_ids.index(last_dislike["image__profile"]))[0]
-            if disliked_profile_index.size:
-                user_cosine_data[disliked_profile_index] -= 2 / (1 + last_dislike["last"].days)
+        user_cosine_data = self.cosine[profile_index, users]
 
-        prediction_data = self.raw_data[users, :][0, :, :][:, items][:, 0, :]
-        prediction = np.dot(prediction_data.T, user_cosine_data) / (np.count_nonzero(prediction_data, axis=0) + 1)
+        prediction_data = self.raw_data[users, :][:, items[0]]
+        prediction = np.dot(prediction_data.T, user_cosine_data) / np.sqrt(np.count_nonzero(prediction_data, axis=0) + 1)
         top_items_pos = prediction.argsort()[-50:]
         predict_image = [
             {

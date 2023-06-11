@@ -327,25 +327,20 @@ class ImageScore(models.Model):
     scheme_image_tag.allow_tags = True
 
     @classmethod
-    def new_score(cls, tg_id, file_unique_id, score):
-        return cls.objects.create(
+    def set_score(cls, tg_id, file_unique_id, score):
+        return cls.objects.update_or_create(
             profile=Profile.objects.get(tg_id=tg_id),
             image=Image.objects.get(file_unique_id=file_unique_id),
-            score=score,
-        )
+            defaults={"score": score},
+        )[0]
 
     @classmethod
-    def last_dislikes(cls, profile_id):
-        ct = datetime_now()
+    def last_dislikes(cls, profile_id, days=1):
         return cls.objects.filter(
             profile=profile_id,
             score__lt=0,
-            datetime__gte=datetime_now() - datetime.timedelta(days=14)
-        ).values(
-            "image__profile"
-        ).annotate(
-            last=ct - Max("datetime")
-        )
+            datetime__gte=datetime_now() - datetime.timedelta(days=days)
+        ).values_list("image__profile", flat=True).distinct()
 
     class Meta:
         verbose_name = "Оценка изображения"

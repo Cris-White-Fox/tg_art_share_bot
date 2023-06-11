@@ -24,8 +24,6 @@ DB_LOCK = Lock()
 COLAB_FILTER = ColabFilter()
 
 
-
-
 def update_user(func):
     def inner(message: Message):
         logging.debug(message)
@@ -195,12 +193,13 @@ def save_photo(message: Message):
                     tg_id=tg_id
                 ),
             )
-            with suppress(django.db.utils.IntegrityError), DB_LOCK:
-                ImageScore.new_score(
+            with DB_LOCK:
+                img_score = ImageScore.set_score(
                     tg_id=tg_id,
                     file_unique_id=Image.objects.get(phash=phash).file_unique_id,
                     score=2,
                 )
+                COLAB_FILTER.update_score(img_score.profile, img_score.image, img_score.score)
             return
 
         markup = quick_markup({
@@ -320,12 +319,14 @@ def score_photo(callback: CallbackQuery):
         score = 2
     else:
         score = 1
-    with suppress(django.db.utils.IntegrityError):
-        ImageScore.new_score(
-            tg_id=callback.from_user.id,
-            file_unique_id=unique_id,
-            score=score,
-        )
+
+    img_score = ImageScore.set_score(
+        tg_id=callback.from_user.id,
+        file_unique_id=unique_id,
+        score=score,
+    )
+    COLAB_FILTER.update_score(img_score.profile.id, img_score.image.id, img_score.score)
+
     callback.message.from_user = callback.from_user
     send_photo(callback.message)
     with suppress(ApiTelegramException):
@@ -384,22 +385,18 @@ def confirm_report(callback: CallbackQuery):
         return
 
     score = -2
-    try:
-        ImageScore.new_score(
-            tg_id=callback.from_user.id,
-            file_unique_id=unique_id,
-            score=score,
-        )
-    except django.db.utils.IntegrityError:
-        pass
+    img_score = ImageScore.set_score(
+        tg_id=callback.from_user.id,
+        file_unique_id=unique_id,
+        score=score,
+    )
+    COLAB_FILTER.update_score(img_score.profile, img_score.image, img_score.score)
 
-    try:
+    with suppress(django.db.utils.IntegrityError):
         Report.new_report(
             tg_id=callback.from_user.id,
             file_unique_id=unique_id,
         )
-    except django.db.utils.IntegrityError:
-        pass
 
     bot.delete_message(callback.message.chat.id, callback.message.id)
     bot.send_message(

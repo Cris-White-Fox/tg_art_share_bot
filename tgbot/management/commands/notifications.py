@@ -5,8 +5,7 @@ from django.core.management.base import BaseCommand
 
 from tgbot.models import Profile
 from project.settings import bot
-from tgbot.recommendations import ColabFilter
-from tgbot.tg_logic import response_text, send_photo_with_default_markup
+from tgbot.tg_logic import response_text, send_photo_with_default_markup, COLAB_FILTER
 
 
 class Command(BaseCommand):
@@ -16,9 +15,8 @@ class Command(BaseCommand):
 
 def job():
     profiles = Profile.list_need_notification()
-    cf = ColabFilter()
     for profile in profiles:
-        if file_unique_ids := cf.predict(profile.id):
+        if file_unique_ids := COLAB_FILTER.predict(profile.id):
             try:
                 bot.send_message(
                     chat_id=profile.tg_id,
