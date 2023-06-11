@@ -74,11 +74,7 @@ class Profile(models.Model):
                     .filter(count__lte=scores_from).count()
                 + cls.objects.filter(image_score__isnull=True).count()
             ) * 100 // profiles_count
-        if similar_profiles := cls.get_similar_profiles(tg_id):
-            similar_profiles_count = similar_profiles.filter(taste_sim__gt=0, scores_count__gte=10).count()
-        else:
-            similar_profiles_count = 0
-        return uploaded_images, uploaded_images_position, scores_from, score_images_position, similar_profiles_count
+        return uploaded_images, uploaded_images_position, scores_from, score_images_position
 
     @classmethod
     def get_similar_profiles(cls, tg_id):

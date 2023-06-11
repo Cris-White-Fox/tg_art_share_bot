@@ -71,6 +71,11 @@ class ColabFilter():
         cosine = similarity * inv_mag
         self.cosine = cosine.T * inv_mag
 
+    def get_similar_profiles(self, target_profile_id):
+        profile_index = self.user_ids.index(target_profile_id)
+        users = np.where(self.cosine[profile_index] > 0)[0]
+        return users
+
     def check_updates(self):
         image_count = Image.objects.count()
         if image_count - self.image_count > 25 and time.time() - self.update_timer > 15 * 60:

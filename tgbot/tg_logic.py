@@ -345,7 +345,8 @@ def score_photo(callback: CallbackQuery):
 @update_user
 @timeit
 def my_stat(message: Message) -> None:
-    uploaded_images, uploaded_images_position, scores_from, score_images_position, similar_profiles = Profile.user_stat(message.from_user.id)
+    uploaded_images, uploaded_images_position, scores_from, score_images_position = Profile.user_stat(message.from_user.id)
+    similar_profiles = len(COLAB_FILTER.get_similar_profiles(Profile.objects.get(tg_id=message.from_user.id).id))
     bot.send_message(
         chat_id=message.chat.id,
         text=response_text(
