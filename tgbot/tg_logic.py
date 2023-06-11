@@ -199,7 +199,7 @@ def save_photo(message: Message):
                     file_unique_id=Image.objects.get(phash=phash).file_unique_id,
                     score=2,
                 )
-                COLAB_FILTER.update_score(img_score.profile, img_score.image, img_score.score)
+                COLAB_FILTER.update_score(img_score)
             return
 
         markup = quick_markup({
@@ -325,7 +325,7 @@ def score_photo(callback: CallbackQuery):
         file_unique_id=unique_id,
         score=score,
     )
-    COLAB_FILTER.update_score(img_score.profile.id, img_score.image.id, img_score.score)
+    COLAB_FILTER.update_score(img_score)
 
     callback.message.from_user = callback.from_user
     send_photo(callback.message)
@@ -390,7 +390,7 @@ def confirm_report(callback: CallbackQuery):
         file_unique_id=unique_id,
         score=score,
     )
-    COLAB_FILTER.update_score(img_score.profile, img_score.image, img_score.score)
+    COLAB_FILTER.update_score(img_score)
 
     with suppress(django.db.utils.IntegrityError):
         Report.new_report(

@@ -41,13 +41,13 @@ class ColabFilter():
         return True
 
     @timeit
-    def update_score(self, profile_id, image_id, score):
-        if profile_id not in self.user_ids or image_id not in self.image_ids:
+    def update_score(self, image_score):
+        if image_score.profile.id not in self.user_ids or image_score.image.id not in self.image_ids:
             return
-        profile_index = self.user_ids.index(profile_id)
-        image_index = self.image_ids.index(image_id)
+        profile_index = self.user_ids.index(image_score.profile.id)
+        image_index = self.image_ids.index(image_score.image.id)
 
-        self.raw_data[profile_index, image_index] = score
+        self.raw_data[profile_index, image_index] = image_score.score
         return True
 
     @timeit
@@ -80,7 +80,7 @@ class ColabFilter():
             self.update_timer = time.time()
 
     @timeit
-    def predict(self, target_profile_id):
+    def predict(self, target_profile_id, count=50):
         self.check_updates()
         if target_profile_id not in self.user_ids:
             return [{
@@ -101,7 +101,7 @@ class ColabFilter():
 
         prediction_data = self.raw_data[users, :][:, items[0]]
         prediction = np.dot(prediction_data.T, user_cosine_data) / np.sqrt(np.count_nonzero(prediction_data, axis=0) + 1)
-        top_items_pos = prediction.argsort()[-50:]
+        top_items_pos = prediction.argsort()[-1:]
         predict_image = [
             {
                 "taste_similarity": prediction[item_pos],
