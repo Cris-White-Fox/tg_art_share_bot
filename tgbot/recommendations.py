@@ -73,7 +73,11 @@ class ColabFilter():
 
     def get_similar_profiles(self, target_profile_id):
         profile_index = self.user_ids.index(target_profile_id)
-        users = np.where(self.cosine[profile_index] > 0)[0]
+        last_dislikes = ImageScore.last_dislikes(target_profile_id)
+        users = np.setdiff1d(
+            np.where(self.cosine[profile_index] > 0),
+            np.array([self.user_ids.index(profile_id) for profile_id in last_dislikes])
+        )
         return users
 
     def check_updates(self):
